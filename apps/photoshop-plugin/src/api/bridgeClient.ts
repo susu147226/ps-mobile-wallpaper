@@ -1,6 +1,7 @@
 import type {
   ApiError,
   BridgeEvent,
+  CropMode,
   DeviceInfo,
   DisplayInfo,
   PreparedWallpaper,
@@ -87,14 +88,21 @@ export class BridgeClient {
     return this.request<WallpaperCapabilities>("GET", `/devices/${encodeURIComponent(deviceId)}/capabilities`);
   }
 
-  /** `POST /api/v1/wallpaper/prepare` — center-crops the exported PNG to the phone screen (spec §10). */
+  /** `POST /api/v1/wallpaper/prepare` — crops the exported PNG to the phone screen (spec §10 / §11). */
   public async prepareWallpaper(
     deviceId: string,
     path: string,
     width?: number,
-    height?: number
+    height?: number,
+    mode?: CropMode
   ): Promise<PreparedWallpaper> {
-    return this.request<PreparedWallpaper>("POST", "/wallpaper/prepare", { deviceId, path, width, height });
+    return this.request<PreparedWallpaper>("POST", "/wallpaper/prepare", {
+      deviceId,
+      path,
+      width,
+      height,
+      mode,
+    });
   }
 
   /** `POST /api/v1/wallpaper/send` — pushes the prepared image to the phone gallery. */

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using PSMobileWallpaper.Domain.Errors;
 using PSMobileWallpaper.Domain.Models;
+using PSMobileWallpaper.Image;
 using PSMobileWallpaper.Image.Abstractions;
 using PSMobileWallpaper.Wallpaper.Abstractions;
 using DeviceManager = PSMobileWallpaper.Device.Abstractions.IDeviceManager;
@@ -33,12 +34,14 @@ public sealed class WallpaperWorkflow
         _logger = logger;
     }
 
-    /// <summary>Reads the phone's screen size and center-crops the source image to match (spec §10).</summary>
+    /// <summary>Reads the phone's screen size and crops the source image to match (spec §10 / §11).</summary>
     public async Task<PreparedWallpaper> PrepareAsync(
         string deviceId,
         string sourceImagePath,
         int? widthOverride = null,
         int? heightOverride = null,
+        CropMode mode = CropMode.CenterCrop,
+        CropRect? customRegion = null,
         CancellationToken cancellationToken = default)
     {
         var device = await _deviceManager.GetDeviceAsync(deviceId, cancellationToken).ConfigureAwait(false);
@@ -73,18 +76,18 @@ public sealed class WallpaperWorkflow
         try
         {
             var outputPath = await _imageProcessor
-                .CenterCropAsync(sourceImagePath, targetWidth, targetHeight, cancellationToken)
+                .CropAsync(sourceImagePath, targetWidth, targetHeight, mode, customRegion, cancellationToken)
                 .ConfigureAwait(false);
 
             _logger.LogInformation(
-                "Prepared wallpaper {Width}x{Height} for {DeviceId} at '{OutputPath}'.",
-                targetWidth, targetHeight, deviceId, outputPath);
+                "Prepared {Width}x{Height} wallpaper for {DeviceId} with mode {Mode} at '{OutputPath}'.",
+                targetWidth, targetHeight, deviceId, mode, outputPath);
 
             return new PreparedWallpaper(
                 true, outputPath, targetWidth, targetHeight,
-                $"Prepared {targetWidth}x{targetHeight} wallpaper.", null);
+                $"Prepared {targetWidth}x{targetHeight} wallpaper using {CropModes.ToConfigName(mode)}.", null);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or IOException)
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or ArgumentException)
         {
             _logger.LogError(ex, "Preparing the wallpaper for {DeviceId} failed.", deviceId);
             return new PreparedWallpaper(false, null, 0, 0, ex.Message, ErrorCodes.ImageProcessFailed);

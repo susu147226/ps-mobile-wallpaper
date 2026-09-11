@@ -61,31 +61,43 @@ public sealed class SkiaImageProcessor : IImageProcessor
         string imagePath,
         int width,
         int height,
+        CancellationToken cancellationToken = default) =>
+        CropAsync(imagePath, width, height, CropMode.CenterCrop, customRegion: null, cancellationToken);
+
+    public Task<string> CropAsync(
+        string imagePath,
+        int width,
+        int height,
+        CropMode mode,
+        CropRect? customRegion = null,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         using var source = Decode(imagePath);
-        var crop = CropCalculator.ComputeCenterCrop(source.Width, source.Height, width, height);
+        var plan = CropCalculator.Compute(mode, source.Width, source.Height, width, height, customRegion);
 
         _logger.LogInformation(
-            "Center-cropping {SourceWidth}x{SourceHeight} -> {TargetWidth}x{TargetHeight} using region {CropWidth}x{CropHeight} at ({X},{Y}).",
-            source.Width, source.Height, width, height,
-            Math.Round(crop.Width), Math.Round(crop.Height), Math.Round(crop.X), Math.Round(crop.Y));
+            "Applying {Mode} to {SourceWidth}x{SourceHeight} -> {TargetWidth}x{TargetHeight}: " +
+            "source ({SourceX},{SourceY}) {SourceW}x{SourceH} into ({DestX},{DestY}) {DestW}x{DestH}.",
+            mode, source.Width, source.Height, width, height,
+            Math.Round(plan.Source.X), Math.Round(plan.Source.Y),
+            Math.Round(plan.Source.Width), Math.Round(plan.Source.Height),
+            Math.Round(plan.Destination.X), Math.Round(plan.Destination.Y),
+            Math.Round(plan.Destination.Width), Math.Round(plan.Destination.Height));
 
-        var sourceRect = new SKRect(
-            (float)crop.X,
-            (float)crop.Y,
-            (float)(crop.X + crop.Width),
-            (float)(crop.Y + crop.Height));
-
-        var destinationRect = new SKRect(0, 0, width, height);
-        var info = new SKImageInfo(width, height, source.ColorType, source.AlphaType);
-
+        var info = new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
         using var result = new SKBitmap(info);
+
         using (var canvas = new SKCanvas(result))
         {
-            canvas.DrawBitmap(source, sourceRect, destinationRect, Sampling, paint: null);
+            // Only "fit" leaves part of the target uncovered, so only it needs a defined backdrop.
+            if (mode == CropMode.CenterFit)
+            {
+                canvas.Clear(_format == ImageFormat.Jpeg ? SKColors.Black : SKColors.Transparent);
+            }
+
+            canvas.DrawBitmap(source, ToSkRect(plan.Source), ToSkRect(plan.Destination), Sampling, paint: null);
             canvas.Flush();
         }
 
@@ -117,6 +129,9 @@ public sealed class SkiaImageProcessor : IImageProcessor
         return SKBitmap.Decode(imagePath)
             ?? throw new InvalidOperationException($"{ErrorCodes.ImageProcessFailed}: unable to decode '{imagePath}'.");
     }
+
+    private static SKRect ToSkRect(CropRect rect) =>
+        new((float)rect.X, (float)rect.Y, (float)(rect.X + rect.Width), (float)(rect.Y + rect.Height));
 
     private string Save(SKBitmap bitmap)
     {

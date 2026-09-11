@@ -1,7 +1,10 @@
+using Microsoft.Extensions.Options;
 using PSMobileWallpaper.Api.Contracts;
 using PSMobileWallpaper.Application;
 using PSMobileWallpaper.Domain.Errors;
+using PSMobileWallpaper.Domain.Models;
 using PSMobileWallpaper.Image.Abstractions;
+using PSMobileWallpaper.Infrastructure.Configuration;
 
 namespace PSMobileWallpaper.Api.Endpoints;
 
@@ -35,10 +38,21 @@ public static class ImageEndpoints
         group.MapPost("/crop", async (
             CropRequest request,
             WallpaperWorkflow workflow,
+            IOptions<ImageOptions> imageOptions,
             CancellationToken cancellationToken) =>
         {
+            var mode = CropRequestExtensions.ResolveMode(
+                request.Mode,
+                CropModes.Parse(imageOptions.Value.CropMode));
+
             var prepared = await workflow.PrepareAsync(
-                request.DeviceId, request.Path, request.Width, request.Height, cancellationToken);
+                request.DeviceId,
+                request.Path,
+                request.Width,
+                request.Height,
+                mode,
+                request.Region.ToCropRect(),
+                cancellationToken);
 
             return prepared.Success
                 ? Results.Ok(prepared)

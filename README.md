@@ -117,10 +117,11 @@ cd apps/photoshop-plugin && npm install && npm run build
 用 Huawei JAD-AL80（Android 12）实测通过：设备检测、设备发现、状态映射、设备信息
 （`getprop`）、屏幕尺寸（`wm size` / `wm density`）、Shell、Push、Pull 往返。
 
-**Phase 4（HDC）— 代码就绪，缺 HarmonyOS 真机**
+**Phase 4（HDC）— 已在真机验证**
 
-`hdc` 二进制检测与设备发现已验证（正确返回 `[Empty]`）。设备信息、Shell、
-`file send` / `file recv` 需要一台 HarmonyOS 设备才能验收。
+用 HarmonyOS 设备（HUAWEI EMA-AL00U，OpenHarmony 7.0.0.105，1280×2800）实测通过：
+`hdc` 检测、设备发现、状态映射、`param get` 设备信息、`hidumper` 屏幕尺寸与密度、
+Shell、`file send` / `file recv` 往返。集成测试 14/14 全绿，无跳过。
 
 **Phase 5（UXP ↔ Bridge）— 契约已验证**
 
@@ -129,30 +130,47 @@ cd apps/photoshop-plugin && npm install && npm run build
 1. WebSocket 无 token 握手 → 401（§23）
 2. WebSocket 带 token 握手 → 101
 3. 真机识别 → Huawei JAD-AL80，1228×2700
-4. `POST /wallpaper/prepare` → 将 1600×1200 源图居中裁剪为 **1228×2700**（§10）
+4. `POST /wallpaper/prepare` → 将源图裁剪为 **1228×2700**（§10）
 5. 同时收到 WebSocket 事件 `{"event":"device.connected","data":{...}}`（§22）
 
 另有一组契约测试（`tests/unit/.../Contracts/WireContractTests.cs`）锁定线上 JSON 形状，
 确保 §5.4 / §6 / §19 / §22 / §29 / §30 定义的字段集不被计算属性污染。
 
+**Phase 7（图片处理）— §11 全部模式已实现并验证**
+
+| 模式 | 说明 |
+|---|---|
+| `center-crop` | 居中裁剪，铺满目标（默认） |
+| `center-fit` | 完整适应，保留整图，留边补黑/透明 |
+| `stretch` | 拉伸铺满（不保持比例） |
+| `top-crop` | 同 center-crop 的取景尺寸，锚定顶部 |
+| `bottom-crop` | 同上，锚定底部 |
+| `custom` | 用户指定源区域（**仅 API**，插件 UI 未提供区域编辑器） |
+
+`scripts/crop-modes-check.py` 用纯 Python 解码 Bridge 输出的 PNG 并断言真实像素：
+center-fit 必须留边、其余模式必须铺满、三种纵向锚定的取样窗口必须依次下移。
+在真机上实测得到首行 green 依次为 `0 / 34 / 68`，与几何计算完全吻合。
+
+注意：当源图**宽于**目标时，裁剪会保留全高、只裁左右，此时 `center-crop`、`top-crop`、
+`bottom-crop` 在数学上等价 —— 纵向锚定只有在源图相对更高时才有区别。
+
 **尚未完成**
 
-- Phase 4 的真机验收（需要 HarmonyOS 设备）
 - Phase 6：插件侧画布导出尚未进 Photoshop 实机验证（本机缺 UXP Developer Tool）
-- Phase 7：§11 仅实现 `center-crop`，其余裁剪模式未实现
 - Phase 9 / 10：**真实的锁屏壁纸设置尚未按品牌验证**
 
 ## 验证方式
 
 ```bash
-# 单元测试（含线上格式契约）
+# 单元测试（含线上格式契约与全部裁剪模式几何）
 dotnet test tests/unit/PSMobileWallpaper.Tests/PSMobileWallpaper.Tests.csproj
 
 # 集成测试：需要真机；无设备时自动跳过并保持绿色
 dotnet test tests/integration/PSMobileWallpaper.IntegrationTests/PSMobileWallpaper.IntegrationTests.csproj
 
 # 端到端（需先启动 Bridge）
-python scripts/phase5-e2e-check.py
+python scripts/phase5-e2e-check.py    # 设备识别 + WS 事件 + 裁剪
+python scripts/crop-modes-check.py    # §11 全部裁剪模式的像素级验证
 ```
 
 ## 重要说明

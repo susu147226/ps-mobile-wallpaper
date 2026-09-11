@@ -2,6 +2,7 @@ import { storage } from "uxp";
 import { BridgeClient, BridgeError } from "../api/bridgeClient";
 import type {
   BridgeEvent,
+  CropMode,
   DeviceInfo,
   DeviceState,
   OutputFormat,
@@ -11,6 +12,15 @@ import type {
 import { DEVICE_STATE_LABELS } from "../models/types";
 import { exportActiveDocument, readActiveDocument } from "../services/photoshopService";
 import { formatProgressBar, formatSize } from "../utils/format";
+
+/** Spec §31 crop-mode labels, matching the option text in index.html. */
+const CROP_MODE_LABELS: Record<CropMode, string> = {
+  "center-crop": "居中裁剪",
+  "center-fit": "完整适应",
+  stretch: "拉伸铺满",
+  "top-crop": "顶部裁剪",
+  "bottom-crop": "底部裁剪",
+};
 
 /** Spec §32: which dot colour each state gets. */
 const STATE_DOT_CLASS: Record<DeviceState, string> = {
@@ -129,6 +139,12 @@ export class PanelController {
     this.elements.setLock.addEventListener("click", () => void this.guard(() => this.setLockWallpaper()));
     this.elements.outputFormat.addEventListener("change", () => {
       // Changing the format invalidates anything already cropped.
+      this.prepared = null;
+      this.updateActionAvailability();
+    });
+
+    this.elements.cropMode.addEventListener("change", () => {
+      // A different crop mode means the previous result no longer reflects the settings.
       this.prepared = null;
       this.updateActionAvailability();
     });
@@ -275,13 +291,20 @@ export class PanelController {
     this.setMessage("正在导出画布...", "info");
 
     const format = this.elements.outputFormat.value as OutputFormat;
+    const mode = this.elements.cropMode.value as CropMode;
     const exportedPath = await exportActiveDocument(format);
 
     const display = device.display ?? (await this.client.getDisplay(device.id));
     device.display = display;
     this.elements.displaySize.textContent = formatSize(display.width, display.height);
 
-    this.prepared = await this.client.prepareWallpaper(device.id, exportedPath, display.width, display.height);
+    this.prepared = await this.client.prepareWallpaper(
+      device.id,
+      exportedPath,
+      display.width,
+      display.height,
+      mode
+    );
 
     if (!this.prepared.success) {
       this.setMessage(this.prepared.message || "裁剪失败。", "error");
@@ -289,7 +312,7 @@ export class PanelController {
     }
 
     this.setMessage(
-      `裁剪完成：${formatSize(this.prepared.width, this.prepared.height)}\n${this.prepared.imagePath}`,
+      `裁剪完成（${CROP_MODE_LABELS[mode] ?? mode}）：${formatSize(this.prepared.width, this.prepared.height)}\n${this.prepared.imagePath}`,
       "ok"
     );
 

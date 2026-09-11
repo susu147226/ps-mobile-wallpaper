@@ -83,8 +83,8 @@ export interface PreparedWallpaper {
   errorCode?: string | null;
 }
 
-/** Spec §11. Only center-crop is implemented in this phase. */
-export type CropMode = "center-crop";
+/** Spec §11. The modes the panel exposes; `custom` needs a region editor and is API-only for now. */
+export type CropMode = "center-crop" | "center-fit" | "stretch" | "top-crop" | "bottom-crop";
 
 /** Spec §2.5 / §8 */
 export type OutputFormat = "png" | "jpg";
