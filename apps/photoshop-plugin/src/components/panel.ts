@@ -10,6 +10,9 @@ function log(message: string, ...rest: unknown[]): void {
   console.log(`[PSMW] ${message}`, ...rest);
 }
 
+/** UXP's file type; named separately so it is not confused with the DOM `File`. */
+type UxpFile = Awaited<ReturnType<typeof storage.localFileSystem.getFileForOpening>>;
+
 import type {
   BridgeEvent,
   CropMode,
@@ -438,14 +441,11 @@ export class PanelController {
 
   /**
    * Reads the token file the user picks. UXP cannot reach %AppData% itself, so the user has to
-   * choose the file once; the picker opens straight in the bridge's folder to make that easy.
+   * choose the file once; the picker is pointed at the bridge's folder to make that easy.
    */
   private async pickTokenFile(): Promise<void> {
     try {
-      const file = await storage.localFileSystem.getFileForOpening({
-        initialLocation: `${os.homedir()}\\AppData\\Roaming\\PSMobileWallpaper`,
-      });
-
+      const file = await this.openTokenFile();
       if (!file) {
         return;
       }
@@ -464,6 +464,24 @@ export class PanelController {
         "无法读取 Token 文件。请手动打开 %AppData%\\PSMobileWallpaper\\auth.token 并粘贴其内容。",
         "error"
       );
+    }
+  }
+
+  /**
+   * `initialLocation` must be an Entry or a file URL — passing a plain Windows path throws
+   * "initialLocation must be an Entry or a file URL". The hint is only a convenience, so a
+   * rejection falls back to the default location rather than failing the whole action.
+   */
+  private async openTokenFile(): Promise<UxpFile | null> {
+    const folder = `${os.homedir().replace(/\\/g, "/")}/AppData/Roaming/PSMobileWallpaper`;
+
+    try {
+      return await storage.localFileSystem.getFileForOpening({
+        initialLocation: `file:///${folder}`,
+      } as never);
+    } catch (error) {
+      log("initialLocation rejected, retrying without it:", String(error));
+      return await storage.localFileSystem.getFileForOpening({} as never);
     }
   }
 

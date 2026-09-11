@@ -25,8 +25,8 @@
   "requiredPermissions": {
     "network": {
       "domains": [
-        "http://127.0.0.1:18765",
-        "ws://127.0.0.1:18765"
+        "http://localhost:18765",
+        "ws://localhost:18765"
       ]
     },
     "localFileSystem": "fullAccess"

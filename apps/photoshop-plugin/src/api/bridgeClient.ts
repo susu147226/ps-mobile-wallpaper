@@ -10,8 +10,8 @@ import type {
 } from "../models/types";
 
 /** Spec §2.4 default endpoints. */
-export const DEFAULT_BRIDGE_HTTP = "http://127.0.0.1:18765";
-export const DEFAULT_BRIDGE_WS = "ws://127.0.0.1:18765/ws";
+export const DEFAULT_BRIDGE_HTTP = "http://localhost:18765";
+export const DEFAULT_BRIDGE_WS = "ws://localhost:18765/ws";
 export const API_PREFIX = "/api/v1";
 
 export class BridgeError extends Error {
@@ -63,7 +63,10 @@ export class BridgeClient {
       const response = await fetch(`${this.baseUrl}/health`, { method: "GET" });
 
       return response.ok;
-    } catch {
+    } catch (error) {
+      // Swallowing this silently made "the panel cannot reach the bridge" impossible to diagnose;
+      // the reason (blocked by the network permission, wrong host, connection refused) matters.
+      console.log(`[PSMW] /health failed: ${String(error)}`);
       return false;
     }
   }
