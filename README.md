@@ -223,12 +223,40 @@ center-fit 必须留边、其余模式必须铺满、三种纵向锚定的取样
 
 这不是破解：不 root、不改系统镜像、不绕过安全检查（spec §42）。
 
+## HarmonyOS 壁纸：已实测判定为不可行
+
+在 EMA-AL00U（OpenHarmony 7.0.0.105 / API 26）上做了完整的可行性验证。
+
+**结论：无法实现自动设置壁纸，缺少华为开发者账号与签名链。**
+
+逐项证据：
+
+| 环节 | 结论 | 依据 |
+|---|---|---|
+| 无 shell 命令可用 | ❌ | 设备上无 `wallpaper`；`WallpaperManagerService` 经 hidumper 无任何输出 |
+| 构建 HAP | ✅ 可以 | 用 DevEco 自带 hvigor + SDK 实测 `BUILD SUCCESSFUL` |
+| **签名 HAP** | ❌ **不可能** | SDK 密钥库里的应用证书是**自签名**的，无法组成合法链；`hap-sign-tool` 报 `verify certificate chain failed` |
+| 安装到设备 | ❌ | HarmonyOS NEXT 只信任华为签发证书；SDK 里也**没有** `OpenHarmonyApplication.pem` |
+| 壁纸 API | ⚠️ | `@ohos.wallpaper` 的 `setWallpaper` 标注 `@deprecated since 9`，SDK 中无替代 API |
+| 权限 | ⚠️ | `ohos.permission.SET_WALLPAPER` 为系统级；SDK 的 debug profile 模板 `apl` 为 `normal` |
+
+证书链诊断（`openssl x509 -noout -subject -issuer`）：
+
+```
+openharmony application release : subject == issuer  ← 自签名，非 CA 签发
+openharmony application CA      : issuer = Application Root CA
+Application Root CA             : 自签名根
+```
+
+因此鸿蒙设备目前**只支持"保存到相册"**（已可用），壁纸设置返回 `WALLPAPER_NOT_SUPPORTED`。
+
+如需推进，前置条件是：华为开发者账号 + DevEco Studio 中配置签名 + 实名认证。
+
 ## 还没做到
 
-- **HarmonyOS 锁屏/主屏设置**：其 `WallpaperManagerService` 经 hidumper 不暴露任何接口，
-  目前全部返回 `WALLPAPER_NOT_SUPPORTED`，只有相册保存可用。
 - **其他 Android 品牌的锁屏**：未验证。按 §40 一律报 `canSetLock: false`，验证通过后才放开。
 - **主屏设置在非华为设备上**未验证（用的是公开 API，风险较低，但仍是未验证）。
+- **插件面板的交互功能**尚未逐项验证（面板已确认能在 Photoshop 中加载）。
 
 ## 在 Photoshop 中加载插件
 
