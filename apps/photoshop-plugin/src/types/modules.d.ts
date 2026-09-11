@@ -61,7 +61,7 @@ declare module "uxp" {
       getTemporaryFolder(): Promise<Folder>;
       getFolder(): Promise<Folder>;
       getFileForSaving(suggestedName?: string): Promise<File | null>;
-      getFileForOpening(options?: { types?: string[] } | string): Promise<File | null>;
+      getFileForOpening(options?: { initialLocation?: string; types?: string[] }): Promise<File | null>;
     }
 
     export interface Entry {
@@ -87,4 +87,19 @@ declare module "uxp" {
   export namespace shell {
     function openPath(path: string): Promise<void>;
   }
+}
+
+declare module "os" {
+  /** UXP's os shim exposes only the path helpers a plugin realistically needs. */
+  export function homedir(): string;
+  export function tmpdir(): string;
+  export function platform(): string;
+
+  const os: {
+    homedir(): string;
+    tmpdir(): string;
+    platform(): string;
+  };
+
+  export default os;
 }

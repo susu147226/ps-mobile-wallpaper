@@ -1,5 +1,15 @@
+import os from "os";
 import { storage } from "uxp";
 import { BridgeClient, BridgeError } from "../api/bridgeClient";
+
+/**
+ * UXP surfaces these in Photoshop's UXPLogs file, which is the only way to diagnose the panel —
+ * it has no visible console. Everything the panel decides should be traceable from there.
+ */
+function log(message: string, ...rest: unknown[]): void {
+  console.log(`[PSMW] ${message}`, ...rest);
+}
+
 import type {
   BridgeEvent,
   CropMode,
@@ -93,7 +103,11 @@ export class PanelController {
     this.updateCanvasInfo();
     this.updateActionAvailability();
 
+    log("panel started; token set:", this.client.getToken().length > 0);
+
     const healthy = await this.client.checkHealth();
+    log("bridge /health reachable:", healthy);
+
     if (!healthy) {
       this.setMessage(
         "未能连接 PhoneBridge（http://127.0.0.1:18765）。请先启动 PhoneBridge，再点击「获取手机尺寸」。",
@@ -123,6 +137,8 @@ export class PanelController {
 
     this.elements.tokenInput.addEventListener("change", () => {
       this.client.setToken(this.elements.tokenInput.value);
+      log("token applied; length:", this.client.getToken().length);
+
       this.setMessage(
         this.client.getToken() ? "已应用本地认证 Token。" : "已清空本地认证 Token。",
         "info"
@@ -161,9 +177,12 @@ export class PanelController {
     try {
       this.devices = await this.client.getDevices();
     } catch (error) {
+      log("GET /devices failed:", error instanceof BridgeError ? error.errorCode : String(error));
       this.setMessage(describeError(error), "error");
       return;
     }
+
+    log("GET /devices returned", this.devices.length, "device(s)");
 
     const previous = this.selectedDeviceId;
     this.renderDeviceOptions();
@@ -417,23 +436,30 @@ export class PanelController {
     }
   }
 
-  /** Reads the token file the user picks, since UXP cannot reach %AppData% directly. */
+  /**
+   * Reads the token file the user picks. UXP cannot reach %AppData% itself, so the user has to
+   * choose the file once; the picker opens straight in the bridge's folder to make that easy.
+   */
   private async pickTokenFile(): Promise<void> {
     try {
-      const file = await storage.localFileSystem.getFileForOpening("auth.token");
+      const file = await storage.localFileSystem.getFileForOpening({
+        initialLocation: `${os.homedir()}\\AppData\\Roaming\\PSMobileWallpaper`,
+      });
 
       if (!file) {
         return;
       }
 
       const token = String(await file.read()).trim();
+      log("token file picked; length:", token.length);
 
       if (token) {
         this.elements.tokenInput.value = token;
         this.client.setToken(token);
         this.setMessage("已从文件读取并应用 Token。", "ok");
       }
-    } catch {
+    } catch (error) {
+      log("token file pick failed:", String(error));
       this.setMessage(
         "无法读取 Token 文件。请手动打开 %AppData%\\PSMobileWallpaper\\auth.token 并粘贴其内容。",
         "error"
