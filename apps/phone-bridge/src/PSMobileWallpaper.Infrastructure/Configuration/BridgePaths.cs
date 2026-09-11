@@ -36,6 +36,19 @@ public static class BridgePaths
         "helpers",
         "psmw-wallpaper-helper.apk");
 
+    /// <summary>
+    /// Directory holding the adb shipped with the installer (spec §27 reserves runtime/adb).
+    /// It is searched before PATH so a fresh install can talk to an Android phone immediately.
+    /// </summary>
+    public static string BundledAdbDirectory { get; } = Path.Combine(AppContext.BaseDirectory, "runtime", "adb");
+
+    /// <summary>
+    /// Directory holding an hdc shipped alongside the bridge, if one is provided. hdc normally comes
+    /// from DevEco Studio, which cannot be redistributed here, so this is usually empty and the
+    /// user points hdc.path at their own copy.
+    /// </summary>
+    public static string BundledHdcDirectory { get; } = Path.Combine(AppContext.BaseDirectory, "runtime", "hdc");
+
     public static void EnsureCreated()
     {
         Directory.CreateDirectory(RootDirectory);

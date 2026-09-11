@@ -15,11 +15,15 @@ public sealed class HdcTransport : IDeviceTransport
     private readonly ICliProcessRunner _runner;
     private readonly ILogger<HdcTransport> _logger;
 
-    public HdcTransport(ICliProcessRunner runner, ILogger<HdcTransport> logger, string? configuredPath = null)
+    public HdcTransport(
+        ICliProcessRunner runner,
+        ILogger<HdcTransport> logger,
+        string? configuredPath = null,
+        string? bundledDirectory = null)
     {
         _runner = runner;
         _logger = logger;
-        ExecutablePath = ExecutableLocator.Resolve("hdc", configuredPath);
+        ExecutablePath = ExecutableLocator.Resolve("hdc", configuredPath, bundledDirectory ?? string.Empty);
     }
 
     public DeviceTransport Kind => DeviceTransport.Hdc;

@@ -67,6 +67,11 @@ cd apps/photoshop-plugin && npm install && npm run build
 
 可执行文件是**自包含**的：目标机器**不需要 .NET 运行时，也不需要 Adobe 账号**。
 
+安装后**开箱可用**，无需任何配置：adb 随包分发给 Android 用，面板自动部署，认证默认关闭。
+
+唯一需要自备的是 **hdc**（鸿蒙用）—— 它随 DevEco Studio 分发、没有再分发授权，所以没有打包。
+把 `config.json` 的 `hdc.path` 指向其目录，或加入 PATH 即可。鸿蒙的反向端口转发由 Bridge 自动建立。
+
 ```powershell
 # 构建全部产物
 powershell -ExecutionPolicy Bypass -File scripts/build-installer.ps1 -Version 1.0.0

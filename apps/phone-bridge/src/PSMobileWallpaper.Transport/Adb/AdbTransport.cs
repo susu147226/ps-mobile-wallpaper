@@ -15,11 +15,15 @@ public sealed class AdbTransport : IDeviceTransport
     private readonly ICliProcessRunner _runner;
     private readonly ILogger<AdbTransport> _logger;
 
-    public AdbTransport(ICliProcessRunner runner, ILogger<AdbTransport> logger, string? configuredPath = null)
+    public AdbTransport(
+        ICliProcessRunner runner,
+        ILogger<AdbTransport> logger,
+        string? configuredPath = null,
+        string? bundledDirectory = null)
     {
         _runner = runner;
         _logger = logger;
-        ExecutablePath = ExecutableLocator.Resolve("adb", configuredPath);
+        ExecutablePath = ExecutableLocator.Resolve("adb", configuredPath, bundledDirectory ?? string.Empty);
     }
 
     public DeviceTransport Kind => DeviceTransport.Adb;

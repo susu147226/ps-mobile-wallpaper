@@ -6,7 +6,7 @@ namespace PSMobileWallpaper.Transport;
 /// </summary>
 public static class ExecutableLocator
 {
-    public static string Resolve(string executableName, string? configuredPath)
+    public static string Resolve(string executableName, string? configuredPath, params string[] additionalDirectories)
     {
         var fileName = OperatingSystem.IsWindows()
             ? $"{executableName}.exe"
@@ -32,6 +32,29 @@ public static class ExecutableLocator
             // Configured but missing: return it verbatim so callers surface *_NOT_FOUND
             // with the path the user actually configured.
             return configuredPath;
+        }
+
+        // Directories shipped alongside the bridge come before PATH, so a fresh install works
+        // without the user installing or configuring anything.
+        foreach (var directory in additionalDirectories)
+        {
+            if (string.IsNullOrWhiteSpace(directory))
+            {
+                continue;
+            }
+
+            try
+            {
+                var candidate = Path.Combine(directory, fileName);
+                if (File.Exists(candidate))
+                {
+                    return Path.GetFullPath(candidate);
+                }
+            }
+            catch (ArgumentException)
+            {
+                // Malformed directory; skip it.
+            }
         }
 
         var onPath = FindOnPath(fileName);

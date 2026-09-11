@@ -32,6 +32,9 @@
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="INSTALLFOLDER" Name="PS Mobile Wallpaper">
         <Directory Id="HelpersFolder" Name="helpers" />
+        <Directory Id="RuntimeFolder" Name="runtime">
+          <Directory Id="RuntimeAdbFolder" Name="adb" />
+        </Directory>
       </Directory>
     </StandardDirectory>
 
@@ -57,6 +60,7 @@
 
     <Feature Id="Main" Title="PS Mobile Wallpaper" Level="1">
       <ComponentGroupRef Id="BridgeComponents" />
+      <ComponentGroupRef Id="AdbComponents" />
       <ComponentGroupRef Id="HelperComponents" />
       <ComponentGroupRef Id="ShortcutComponents" />
       <!-- Optional: some users load the panel through the UXP Developer Tool instead. -->
@@ -81,6 +85,21 @@
     <ComponentGroup Id="HelperComponents" Directory="HelpersFolder">
       <Component Id="WallpaperHelperApk" Guid="8C2792BD-C8F4-4A7C-B712-497424ED9436">
         <File Id="HelperApk" Source="staging\app\helpers\psmw-wallpaper-helper.apk" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <!--
+      adb is bundled so a fresh machine can talk to an Android phone with no setup. It is
+      Apache-2.0 and redistributable. hdc is NOT bundled: it ships with DevEco Studio and has no
+      redistribution grant, so hdc.path stays a user setting.
+    -->
+    <ComponentGroup Id="AdbComponents" Directory="RuntimeAdbFolder">
+      <Component Id="BundledAdb" Guid="14043AF3-0C5B-4BAE-A646-E689B179EBEB">
+        <File Id="AdbExe" Source="staging\app\runtime\adb\adb.exe" KeyPath="yes" />
+        <File Id="AdbWinApi" Source="staging\app\runtime\adb\AdbWinApi.dll" />
+        <File Id="AdbWinUsbApi" Source="staging\app\runtime\adb\AdbWinUsbApi.dll" />
       </Component>
     </ComponentGroup>
   </Fragment>

@@ -22,13 +22,18 @@
 
 .PARAMETER JavaSdkDirectory
     JDK used to build the wallpaper helper APK.
+
+.PARAMETER AdbSourceDirectory
+    A directory containing adb.exe (Android SDK Platform Tools). It is copied into the installer so
+    a fresh machine can talk to an Android phone with no setup. Left empty, it is taken from PATH.
 #>
 [CmdletBinding()]
 param(
     [string]$Version = "1.1.0",
     [string]$Configuration = "Release",
     [string]$AndroidSdkDirectory = "C:\Android\Sdk",
-    [string]$JavaSdkDirectory = "C:\Android\Jdk"
+    [string]$JavaSdkDirectory = "C:\Android\Jdk",
+    [string]$AdbSourceDirectory = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -119,7 +124,33 @@ if (-not (Test-Path $helperApk)) {
 New-Item -ItemType Directory -Force -Path (Join-Path $staging "app/helpers") | Out-Null
 Copy-Item $helperApk (Join-Path $staging "app/helpers/psmw-wallpaper-helper.apk") -Force
 
-# --- 4. Build the MSI ---------------------------------------------------------
+# --- 4. Stage adb so a fresh install needs no setup ---------------------------
+# adb is Apache-2.0 and redistributable; hdc is not (it ships with DevEco Studio), so only adb is
+# bundled and hdc.path stays a user setting.
+Write-Host "`n==> Staging adb..."
+
+$adbDir = $AdbSourceDirectory
+if ([string]::IsNullOrWhiteSpace($adbDir)) {
+    $onPath = Get-Command adb.exe -ErrorAction SilentlyContinue
+    if ($onPath) { $adbDir = Split-Path -Parent $onPath.Source }
+}
+
+if ([string]::IsNullOrWhiteSpace($adbDir) -or -not (Test-Path (Join-Path $adbDir "adb.exe"))) {
+    throw "adb.exe not found. Pass -AdbSourceDirectory <platform-tools dir>, or put adb on PATH."
+}
+
+$adbStage = Join-Path $staging "app/runtime/adb"
+New-Item -ItemType Directory -Force -Path $adbStage | Out-Null
+foreach ($name in @("adb.exe", "AdbWinApi.dll", "AdbWinUsbApi.dll")) {
+    $source = Join-Path $adbDir $name
+    if (Test-Path $source) {
+        Copy-Item $source $adbStage -Force
+    } else {
+        Write-Warning "Expected adb component '$name' was not found in '$adbDir'."
+    }
+}
+
+# --- 5. Build the MSI ---------------------------------------------------------
 Write-Host "`n==> Building the MSI with WiX..."
 if (-not (Get-Command wix -ErrorAction SilentlyContinue)) {
     throw "The 'wix' tool was not found. Install it with: dotnet tool install --global wix --version 4.0.6"
@@ -139,7 +170,7 @@ finally {
     Pop-Location
 }
 
-# --- 5. Portable ZIP ----------------------------------------------------------
+# --- 6. Portable ZIP ----------------------------------------------------------
 Write-Host "`n==> Packing the portable ZIP..."
 $portableStage = Join-Path $staging "portable"
 New-Item -ItemType Directory -Force -Path $portableStage | Out-Null
@@ -153,24 +184,26 @@ PS Mobile Wallpaper - PhoneBridge (portable)
 
 1. Run PSMobileWallpaper.Api.exe. The first run creates:
      %AppData%\PSMobileWallpaper\config.json
-     %AppData%\PSMobileWallpaper\auth.token
 2. Load the Photoshop panel (the 'plugin' folder) by copying it to:
      %AppData%\Adobe\UXP\Plugins\External\com.psmobilewallpaper.panel
    then restart Photoshop. It appears under the Plug-ins menu.
    (The MSI installer does this step for you.)
-3. Copy the contents of auth.token into the panel's token field.
 
-The Android wallpaper helper is in 'helpers\'. The bridge installs it on the
-phone automatically the first time a wallpaper is set.
+Android phones work out of the box: adb ships in 'runtime\adb' and the wallpaper
+helper APK in 'helpers\' (the bridge installs it on the phone when needed).
 
-The bridge listens on http://127.0.0.1:18765 and only accepts requests that
-carry the token.
+HarmonyOS phones additionally need hdc. It comes with DevEco Studio and cannot be
+redistributed here, so point config.json's hdc.path at its folder, or put it on
+PATH. The bridge sets up the reverse port forward the phone app needs by itself.
+
+No authentication token is required. Set server.requireToken to true in
+config.json if you want one.
 "@ | Set-Content -Path $readme -Encoding UTF8
 
 $zipPath = Join-Path $artifacts "PSMobileWallpaper-PhoneBridge-$Version-x64.zip"
 Compress-Archive -Path (Join-Path $portableStage "*") -DestinationPath $zipPath -Force
 
-# --- 6. Plugin ZIP ------------------------------------------------------------
+# --- 7. Plugin ZIP ------------------------------------------------------------
 $pluginZip = Join-Path $artifacts "PSMobileWallpaper-Plugin-$Version.zip"
 Compress-Archive -Path (Join-Path $staging "plugin/*") -DestinationPath $pluginZip -Force
 

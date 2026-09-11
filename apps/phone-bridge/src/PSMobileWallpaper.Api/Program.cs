@@ -42,6 +42,7 @@ builder.Services.AddSingleton<ILocalAuthTokenProvider, LocalAuthTokenProvider>()
 builder.Services.AddSingleton<EventBroadcaster>();
 
 // ---- Transports (spec §14 / §15 / §16) ------------------------------------
+// A bundled adb is searched before PATH, so a fresh install needs no setup for Android.
 builder.Services.AddSingleton<IDeviceTransport>(sp =>
 {
     var options = sp.GetRequiredService<IOptions<AdbOptions>>().Value;
@@ -49,7 +50,8 @@ builder.Services.AddSingleton<IDeviceTransport>(sp =>
     return new AdbTransport(
         sp.GetRequiredService<ICliProcessRunner>(),
         sp.GetRequiredService<ILogger<AdbTransport>>(),
-        options.Path);
+        options.Path,
+        BridgePaths.BundledAdbDirectory);
 });
 
 builder.Services.AddSingleton<IDeviceTransport>(sp =>
@@ -59,7 +61,8 @@ builder.Services.AddSingleton<IDeviceTransport>(sp =>
     return new HdcTransport(
         sp.GetRequiredService<ICliProcessRunner>(),
         sp.GetRequiredService<ILogger<HdcTransport>>(),
-        options.Path);
+        options.Path,
+        BridgePaths.BundledHdcDirectory);
 });
 
 // ---- Device discovery (spec §5 / §25 / §26) -------------------------------
@@ -133,6 +136,10 @@ builder.Services.AddSingleton<PreparedImageStore>();
 
 // ---- Background workers ---------------------------------------------------
 builder.Services.AddHostedService<DeviceEventForwarder>();
+
+// Lets a HarmonyOS phone reach this bridge, which its helper app needs in order to fetch
+// the prepared wallpaper. Runs after DeviceEventForwarder so device events are already flowing.
+builder.Services.AddHostedService<HarmonyPortForwardService>();
 
 var app = builder.Build();
 
