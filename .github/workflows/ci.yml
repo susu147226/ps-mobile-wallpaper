@@ -30,8 +30,12 @@ jobs:
       - name: Build
         run: dotnet build apps/phone-bridge/PSMobileWallpaper.sln --no-restore --configuration Release
 
-      - name: Test
+      - name: Test (unit)
         run: dotnet test tests/unit/PSMobileWallpaper.Tests/PSMobileWallpaper.Tests.csproj --no-build --configuration Release --verbosity normal
+
+      # Device-dependent cases skip themselves when no phone is attached, so this stays green on CI.
+      - name: Test (integration)
+        run: dotnet test tests/integration/PSMobileWallpaper.IntegrationTests/PSMobileWallpaper.IntegrationTests.csproj --no-build --configuration Release --verbosity normal
 
   photoshop-plugin:
     name: Photoshop Plugin (UXP)

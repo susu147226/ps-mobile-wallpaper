@@ -23,6 +23,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PSMobileWallpaper.Wallpaper
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PSMobileWallpaper.Tests", "..\..\tests\unit\PSMobileWallpaper.Tests\PSMobileWallpaper.Tests.csproj", "{9EF81BD9-880D-47D4-AD94-1C9A263C072F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PSMobileWallpaper.IntegrationTests", "..\..\tests\integration\PSMobileWallpaper.IntegrationTests\PSMobileWallpaper.IntegrationTests.csproj", "{713BBDBC-CE3B-4B75-867E-99443F6E32BF}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -141,6 +143,18 @@ Global
 		{9EF81BD9-880D-47D4-AD94-1C9A263C072F}.Release|x64.Build.0 = Release|Any CPU
 		{9EF81BD9-880D-47D4-AD94-1C9A263C072F}.Release|x86.ActiveCfg = Release|Any CPU
 		{9EF81BD9-880D-47D4-AD94-1C9A263C072F}.Release|x86.Build.0 = Release|Any CPU
+		{713BBDBC-CE3B-4B75-867E-99443F6E32BF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{713BBDBC-CE3B-4B75-867E-99443F6E32BF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{713BBDBC-CE3B-4B75-867E-99443F6E32BF}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{713BBDBC-CE3B-4B75-867E-99443F6E32BF}.Debug|x64.Build.0 = Debug|Any CPU
+		{713BBDBC-CE3B-4B75-867E-99443F6E32BF}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{713BBDBC-CE3B-4B75-867E-99443F6E32BF}.Debug|x86.Build.0 = Debug|Any CPU
+		{713BBDBC-CE3B-4B75-867E-99443F6E32BF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{713BBDBC-CE3B-4B75-867E-99443F6E32BF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{713BBDBC-CE3B-4B75-867E-99443F6E32BF}.Release|x64.ActiveCfg = Release|Any CPU
+		{713BBDBC-CE3B-4B75-867E-99443F6E32BF}.Release|x64.Build.0 = Release|Any CPU
+		{713BBDBC-CE3B-4B75-867E-99443F6E32BF}.Release|x86.ActiveCfg = Release|Any CPU
+		{713BBDBC-CE3B-4B75-867E-99443F6E32BF}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

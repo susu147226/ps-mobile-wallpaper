@@ -100,7 +100,7 @@ cd apps/photoshop-plugin && npm install && npm run build
 
 ## 当前进度
 
-**已完成：文档 §41 第一阶段全部 14 项。**
+**Phase 1（文档 §41 全部 14 项）— 已完成**
 
 - 项目结构与 CI
 - UXP 插件工程（§31 面板 UI、§32 状态、§33 进度）
@@ -112,12 +112,48 @@ cd apps/photoshop-plugin && npm install && npm run build
 - Serilog 日志（§2.6）+ JSON 配置（§2.7 / §24）
 - xUnit 单元测试（§2.10）
 
-**尚未实现（按文档属后续阶段）：**
+**Phase 3（ADB）— 已在真机验证**
 
-- Phase 3 / 4：ADB / HDC 的真机联调验证
-- Phase 6：插件侧画布导出的真机验证
-- Phase 7：`IImageProcessor` 的完善与更多裁剪模式（§11 仅实现 `center-crop`）
+用 Huawei JAD-AL80（Android 12）实测通过：设备检测、设备发现、状态映射、设备信息
+（`getprop`）、屏幕尺寸（`wm size` / `wm density`）、Shell、Push、Pull 往返。
+
+**Phase 4（HDC）— 代码就绪，缺 HarmonyOS 真机**
+
+`hdc` 二进制检测与设备发现已验证（正确返回 `[Empty]`）。设备信息、Shell、
+`file send` / `file recv` 需要一台 HarmonyOS 设备才能验收。
+
+**Phase 5（UXP ↔ Bridge）— 契约已验证**
+
+`scripts/phase5-e2e-check.py` 对运行中的 Bridge 做端到端验证，全部通过：
+
+1. WebSocket 无 token 握手 → 401（§23）
+2. WebSocket 带 token 握手 → 101
+3. 真机识别 → Huawei JAD-AL80，1228×2700
+4. `POST /wallpaper/prepare` → 将 1600×1200 源图居中裁剪为 **1228×2700**（§10）
+5. 同时收到 WebSocket 事件 `{"event":"device.connected","data":{...}}`（§22）
+
+另有一组契约测试（`tests/unit/.../Contracts/WireContractTests.cs`）锁定线上 JSON 形状，
+确保 §5.4 / §6 / §19 / §22 / §29 / §30 定义的字段集不被计算属性污染。
+
+**尚未完成**
+
+- Phase 4 的真机验收（需要 HarmonyOS 设备）
+- Phase 6：插件侧画布导出尚未进 Photoshop 实机验证（本机缺 UXP Developer Tool）
+- Phase 7：§11 仅实现 `center-crop`，其余裁剪模式未实现
 - Phase 9 / 10：**真实的锁屏壁纸设置尚未按品牌验证**
+
+## 验证方式
+
+```bash
+# 单元测试（含线上格式契约）
+dotnet test tests/unit/PSMobileWallpaper.Tests/PSMobileWallpaper.Tests.csproj
+
+# 集成测试：需要真机；无设备时自动跳过并保持绿色
+dotnet test tests/integration/PSMobileWallpaper.IntegrationTests/PSMobileWallpaper.IntegrationTests.csproj
+
+# 端到端（需先启动 Bridge）
+python scripts/phase5-e2e-check.py
+```
 
 ## 重要说明
 
