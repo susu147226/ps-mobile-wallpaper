@@ -7,11 +7,12 @@ namespace PSMobileWallpaper.Wallpaper.Providers;
 /// Base for the brand-specific Android providers in spec §18. Brand matching mirrors the
 /// device-adapter rules so a device is never claimed by two different families.
 /// </summary>
-public abstract class BrandWallpaperProviderBase : WallpaperProviderBase
+public abstract class BrandWallpaperProviderBase : AndroidHelperWallpaperProviderBase
 {
     private readonly string[] _aliases;
 
-    protected BrandWallpaperProviderBase(ILogger logger, string[] aliases) : base(logger) => _aliases = aliases;
+    protected BrandWallpaperProviderBase(ILogger logger, string[] aliases, string helperApkPath)
+        : base(logger, helperApkPath) => _aliases = aliases;
 
     public override bool CanHandle(DeviceInfo device)
     {

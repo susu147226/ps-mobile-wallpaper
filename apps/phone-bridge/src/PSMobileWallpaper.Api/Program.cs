@@ -95,13 +95,29 @@ builder.Services.AddSingleton<IImageProcessor>(sp =>
 });
 
 // ---- Wallpaper (spec §17 / §18) -------------------------------------------
-builder.Services.AddSingleton<IWallpaperProvider, HuaweiWallpaperProvider>();
-builder.Services.AddSingleton<IWallpaperProvider, HonorWallpaperProvider>();
-builder.Services.AddSingleton<IWallpaperProvider, XiaomiWallpaperProvider>();
-builder.Services.AddSingleton<IWallpaperProvider, OppoWallpaperProvider>();
-builder.Services.AddSingleton<IWallpaperProvider, VivoWallpaperProvider>();
+// Android providers receive the bundled helper APK; they install it on demand and only advertise
+// lock/home support once it is actually present on the device (spec §40).
+var helperApkPath = BridgePaths.HelperApkPath;
+
+builder.Services.AddSingleton<IWallpaperProvider>(sp =>
+    new HuaweiWallpaperProvider(sp.GetRequiredService<ILogger<HuaweiWallpaperProvider>>(), helperApkPath));
+
+builder.Services.AddSingleton<IWallpaperProvider>(sp =>
+    new HonorWallpaperProvider(sp.GetRequiredService<ILogger<HonorWallpaperProvider>>(), helperApkPath));
+
+builder.Services.AddSingleton<IWallpaperProvider>(sp =>
+    new XiaomiWallpaperProvider(sp.GetRequiredService<ILogger<XiaomiWallpaperProvider>>(), helperApkPath));
+
+builder.Services.AddSingleton<IWallpaperProvider>(sp =>
+    new OppoWallpaperProvider(sp.GetRequiredService<ILogger<OppoWallpaperProvider>>(), helperApkPath));
+
+builder.Services.AddSingleton<IWallpaperProvider>(sp =>
+    new VivoWallpaperProvider(sp.GetRequiredService<ILogger<VivoWallpaperProvider>>(), helperApkPath));
+
 builder.Services.AddSingleton<IWallpaperProvider, HarmonyWallpaperProvider>();
-builder.Services.AddSingleton<IWallpaperProvider, AndroidWallpaperProvider>();
+
+builder.Services.AddSingleton<IWallpaperProvider>(sp =>
+    new AndroidWallpaperProvider(sp.GetRequiredService<ILogger<AndroidWallpaperProvider>>(), helperApkPath));
 
 builder.Services.AddSingleton<IWallpaperService>(sp => new WallpaperService(
     sp.GetRequiredService<IEnumerable<IWallpaperProvider>>(),

@@ -27,6 +27,15 @@ public static class BridgePaths
         Path.GetTempPath(),
         ApplicationFolderName);
 
+    /// <summary>
+    /// The Android helper APK shipped next to the bridge. It is installed on demand when a device
+    /// needs a wallpaper set through the official WallpaperManager API (see the helper's README).
+    /// </summary>
+    public static string HelperApkPath { get; } = Path.Combine(
+        AppContext.BaseDirectory,
+        "helpers",
+        "psmw-wallpaper-helper.apk");
+
     public static void EnsureCreated()
     {
         Directory.CreateDirectory(RootDirectory);

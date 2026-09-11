@@ -29,14 +29,25 @@ public sealed class WallpaperService : IWallpaperService
         _saveToGallery = saveToGallery;
     }
 
-    public Task<WallpaperCapabilities> GetCapabilitiesAsync(
+    public async Task<WallpaperCapabilities> GetCapabilitiesAsync(
         DeviceInfo device,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
         var provider = FindProvider(device);
+        if (provider is null)
+        {
+            return WallpaperCapabilities.None;
+        }
 
-        return Task.FromResult(provider?.GetCapabilities(device) ?? WallpaperCapabilities.None);
+        var transport = _transports.FirstOrDefault(candidate => candidate.Kind == device.Transport);
+        if (transport is null)
+        {
+            return WallpaperCapabilities.None;
+        }
+
+        return await provider
+            .GetCapabilitiesAsync(device, transport, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public Task<WallpaperResult> SetLockWallpaperAsync(
@@ -93,7 +104,10 @@ public sealed class WallpaperService : IWallpaperService
         // Spec §20: the default mode saves to the gallery before touching wallpaper settings.
         if (_saveToGallery)
         {
-            var capabilities = provider.GetCapabilities(device);
+            var capabilities = await provider
+                .GetCapabilitiesAsync(device, transport, cancellationToken)
+                .ConfigureAwait(false);
+
             if (capabilities.CanSaveToGallery)
             {
                 var saveResult = await SaveToGalleryAsync(provider, device, transport, imagePath, cancellationToken)

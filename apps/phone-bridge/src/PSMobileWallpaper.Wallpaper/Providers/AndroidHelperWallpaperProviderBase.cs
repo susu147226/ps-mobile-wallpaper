@@ -1,0 +1,277 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Microsoft.Extensions.Logging;
+using PSMobileWallpaper.Domain.Errors;
+using PSMobileWallpaper.Domain.Models;
+using PSMobileWallpaper.Transport.Abstractions;
+
+namespace PSMobileWallpaper.Wallpaper.Providers;
+
+/// <summary>
+/// Base for Android providers that set wallpapers through the bundled companion app.
+///
+/// `adb shell` cannot set a wallpaper: `cmd wallpaper` has no implementation on these builds, and
+/// although the shell user holds SET_WALLPAPER there is no CLI surface that uses it. The helper app
+/// performs the operation through the official WallpaperManager API instead — no root, no system
+/// modification, no security bypass (spec §42).
+///
+/// Capabilities are only advertised once the helper is actually installed on the device, so a phone
+/// without it honestly reports gallery-only support (spec §40).
+/// </summary>
+public abstract class AndroidHelperWallpaperProviderBase : WallpaperProviderBase
+{
+    internal const string HelperPackage = "com.psmobilewallpaper.helper";
+    internal const string HelperActivity = "com.psmobilewallpaper.helper.SetWallpaperActivity";
+
+    private const string RemoteImageDirectory = "/sdcard/Download/PSMobileWallpaper";
+
+    /// <summary>Written by the helper, read back by us: `am start` cannot return a value.</summary>
+    private const string RemoteResultPath =
+        "/sdcard/Android/data/com.psmobilewallpaper.helper/files/psmw-result.json";
+
+    private static readonly TimeSpan ResultTimeout = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan ResultPollInterval = TimeSpan.FromMilliseconds(500);
+
+    protected AndroidHelperWallpaperProviderBase(ILogger logger, string helperApkPath) : base(logger)
+        => HelperApkPath = helperApkPath;
+
+    /// <summary>Absolute path to the helper APK shipped alongside the bridge. Empty when unavailable.</summary>
+    protected string HelperApkPath { get; }
+
+    public override async Task<WallpaperCapabilities> GetCapabilitiesAsync(
+        DeviceInfo device,
+        IDeviceTransport transport,
+        CancellationToken cancellationToken = default)
+    {
+        var helperInstalled = await IsHelperInstalledAsync(device, transport, cancellationToken).ConfigureAwait(false);
+
+        return new WallpaperCapabilities
+        {
+            // Only claim the wallpaper screens when the helper that performs them is present.
+            CanSetLock = helperInstalled,
+            CanSetHome = helperInstalled,
+            CanSetBoth = helperInstalled,
+            CanSaveToGallery = true,
+            RequiresUserConfirmation = !helperInstalled,
+        };
+    }
+
+    public override Task<WallpaperResult> SetLockAsync(
+        DeviceInfo device,
+        IDeviceTransport transport,
+        string imagePath,
+        CancellationToken cancellationToken = default) =>
+        ApplyAsync(device, transport, imagePath, "lock", cancellationToken);
+
+    public override Task<WallpaperResult> SetHomeAsync(
+        DeviceInfo device,
+        IDeviceTransport transport,
+        string imagePath,
+        CancellationToken cancellationToken = default) =>
+        ApplyAsync(device, transport, imagePath, "home", cancellationToken);
+
+    public override Task<WallpaperResult> SetBothAsync(
+        DeviceInfo device,
+        IDeviceTransport transport,
+        string imagePath,
+        CancellationToken cancellationToken = default) =>
+        ApplyAsync(device, transport, imagePath, "both", cancellationToken);
+
+    /// <summary>True when the helper package is present on the device.</summary>
+    protected async Task<bool> IsHelperInstalledAsync(
+        DeviceInfo device,
+        IDeviceTransport transport,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var output = await transport
+                .ShellAsync(device.Id, $"pm list packages {HelperPackage}", cancellationToken)
+                .ConfigureAwait(false);
+
+            return output.Contains(HelperPackage, StringComparison.Ordinal);
+        }
+        catch (TransportException ex)
+        {
+            Logger.LogDebug(ex, "Could not query installed packages on {DeviceId}.", device.Id);
+            return false;
+        }
+    }
+
+    private async Task<WallpaperResult> ApplyAsync(
+        DeviceInfo device,
+        IDeviceTransport transport,
+        string imagePath,
+        string target,
+        CancellationToken cancellationToken)
+    {
+        if (!File.Exists(imagePath))
+        {
+            return WallpaperResult.Fail(device.Id, ErrorCodes.ImageNotFound, $"Image not found: {imagePath}");
+        }
+
+        var install = await EnsureHelperInstalledAsync(device, transport, cancellationToken).ConfigureAwait(false);
+        if (install is not null)
+        {
+            return install;
+        }
+
+        try
+        {
+            await transport
+                .ShellAsync(device.Id, $"mkdir -p {RemoteImageDirectory}", cancellationToken)
+                .ConfigureAwait(false);
+
+            var remoteImage = $"{RemoteImageDirectory}/{Path.GetFileName(imagePath)}";
+            await transport.PushAsync(device.Id, imagePath, remoteImage, cancellationToken).ConfigureAwait(false);
+
+            // Clear any previous result so a stale file cannot be mistaken for this run's outcome.
+            await transport.ShellAsync(device.Id, $"rm -f {RemoteResultPath}", cancellationToken).ConfigureAwait(false);
+
+            var command =
+                $"am start -n {HelperPackage}/{HelperActivity}" +
+                $" --es imagePath {remoteImage}" +
+                $" --es target {target}" +
+                $" --es resultPath {RemoteResultPath}";
+
+            var startOutput = await transport.ShellAsync(device.Id, command, cancellationToken).ConfigureAwait(false);
+            Logger.LogDebug("Helper start output for {DeviceId}: {Output}", device.Id, startOutput.Trim());
+
+            var payload = await WaitForResultAsync(device, transport, cancellationToken).ConfigureAwait(false);
+            if (payload is null)
+            {
+                return WallpaperResult.Fail(
+                    device.Id,
+                    ErrorCodes.WallpaperSetFailed,
+                    "The wallpaper helper did not report a result. It may be blocked from starting on this device.");
+            }
+
+            Logger.LogInformation(
+                "Helper result for {DeviceId} ({Target}): success={Success} applied={Applied} message={Message}",
+                device.Id, target, payload.Success, string.Join(",", payload.Applied ?? []), payload.Message);
+
+            return payload.Success
+                ? WallpaperResult.Ok(device.Id, payload.Message ?? $"Applied to {target}.")
+                : WallpaperResult.Fail(
+                    device.Id,
+                    payload.ErrorCode ?? ErrorCodes.WallpaperSetFailed,
+                    payload.Message ?? "The helper reported a failure.");
+        }
+        catch (TransportException ex)
+        {
+            Logger.LogError(ex, "Setting the {Target} wallpaper on {DeviceId} failed.", target, device.Id);
+            return WallpaperResult.Fail(device.Id, ex.ErrorCode, ex.Message);
+        }
+    }
+
+    /// <summary>Installs the bundled helper when it is missing. Returns a failure result, or null on success.</summary>
+    private async Task<WallpaperResult?> EnsureHelperInstalledAsync(
+        DeviceInfo device,
+        IDeviceTransport transport,
+        CancellationToken cancellationToken)
+    {
+        if (await IsHelperInstalledAsync(device, transport, cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(HelperApkPath) || !File.Exists(HelperApkPath))
+        {
+            return WallpaperResult.Fail(
+                device.Id,
+                ErrorCodes.WallpaperNotSupported,
+                "The wallpaper helper is not installed on the device and no APK was found to install it.");
+        }
+
+        Logger.LogInformation("Installing the wallpaper helper on {DeviceId}...", device.Id);
+
+        var remoteApk = $"{RemoteImageDirectory}/psmw-helper.apk";
+        await transport.ShellAsync(device.Id, $"mkdir -p {RemoteImageDirectory}", cancellationToken).ConfigureAwait(false);
+        await transport.PushAsync(device.Id, HelperApkPath, remoteApk, cancellationToken).ConfigureAwait(false);
+
+        var output = await transport
+            .ShellAsync(device.Id, $"pm install -r -g {remoteApk}", cancellationToken)
+            .ConfigureAwait(false);
+
+        // `pm install` reports on stdout; a Success line means the package manager accepted it.
+        if (!output.Contains("Success", StringComparison.OrdinalIgnoreCase))
+        {
+            Logger.LogWarning("Helper installation on {DeviceId} failed: {Output}", device.Id, output.Trim());
+
+            return WallpaperResult.Fail(
+                device.Id,
+                ErrorCodes.WallpaperSetFailed,
+                "Could not install the wallpaper helper on the device. Confirm the USB debugging prompt on the phone and try again.");
+        }
+
+        Logger.LogInformation("Wallpaper helper installed on {DeviceId}.", device.Id);
+        return null;
+    }
+
+    private async Task<HelperResult?> WaitForResultAsync(
+        DeviceInfo device,
+        IDeviceTransport transport,
+        CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow + ResultTimeout;
+
+        while (DateTime.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var json = await transport
+                .ShellAsync(device.Id, $"cat {RemoteResultPath} 2>/dev/null", cancellationToken)
+                .ConfigureAwait(false);
+
+            var parsed = TryParse(json);
+            if (parsed is not null)
+            {
+                await transport
+                    .ShellAsync(device.Id, $"rm -f {RemoteResultPath}", cancellationToken)
+                    .ConfigureAwait(false);
+
+                return parsed;
+            }
+
+            await Task.Delay(ResultPollInterval, cancellationToken).ConfigureAwait(false);
+        }
+
+        return null;
+    }
+
+    private HelperResult? TryParse(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        var trimmed = json.Trim();
+        if (!trimmed.StartsWith('{'))
+        {
+            // `cat` of a missing file prints nothing, but some shells still emit an error line.
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<HelperResult>(trimmed, JsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            Logger.LogDebug(ex, "Could not parse the helper result payload.");
+            return null;
+        }
+    }
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
+    private sealed record HelperResult(
+        [property: JsonPropertyName("success")] bool Success,
+        [property: JsonPropertyName("message")] string? Message,
+        [property: JsonPropertyName("errorCode")] string? ErrorCode,
+        [property: JsonPropertyName("applied")] string[]? Applied);
+}

@@ -6,10 +6,9 @@ using PSMobileWallpaper.Transport.Abstractions;
 namespace PSMobileWallpaper.Wallpaper.Providers;
 
 /// <summary>
-/// Shared provider behaviour. Only "save to gallery" is claimed by default, because pushing a file
-/// and letting the media scanner index it is the one operation this codebase can perform without
-/// vendor-specific guesswork. Lock/home assignment stays unsupported until a brand is verified
-/// on real hardware (spec §40).
+/// Shared provider behaviour. "Save to gallery" is always available, because pushing a file and
+/// letting the media indexer pick it up needs no vendor cooperation. Anything beyond that must be
+/// proven on real hardware before it is claimed (spec §40).
 /// </summary>
 public abstract class WallpaperProviderBase : Abstractions.IWallpaperProvider
 {
@@ -24,14 +23,18 @@ public abstract class WallpaperProviderBase : Abstractions.IWallpaperProvider
 
     public abstract bool CanHandle(DeviceInfo device);
 
-    public virtual WallpaperCapabilities GetCapabilities(DeviceInfo device) => new()
-    {
-        CanSetLock = false,
-        CanSetHome = false,
-        CanSetBoth = false,
-        CanSaveToGallery = true,
-        RequiresUserConfirmation = true,
-    };
+    public virtual Task<WallpaperCapabilities> GetCapabilitiesAsync(
+        DeviceInfo device,
+        IDeviceTransport transport,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new WallpaperCapabilities
+        {
+            CanSetLock = false,
+            CanSetHome = false,
+            CanSetBoth = false,
+            CanSaveToGallery = true,
+            RequiresUserConfirmation = true,
+        });
 
     public virtual Task<WallpaperResult> SetLockAsync(
         DeviceInfo device,

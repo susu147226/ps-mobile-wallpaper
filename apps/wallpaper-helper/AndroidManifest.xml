@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <!--
+    SET_WALLPAPER is a normal permission, granted automatically at install time.
+    This helper uses the official WallpaperManager API only: no root, no system modification,
+    no bypass of any device security mechanism (spec §42).
+  -->
+  <uses-permission android:name="android.permission.SET_WALLPAPER" />
+  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+
+  <application
+      android:label="PSMW Wallpaper Helper"
+      android:allowBackup="false"
+      android:supportsRtl="true">
+
+    <!-- No launcher icon: the helper is only ever started by the bridge through `am start`. -->
+    <activity
+        android:name="com.psmobilewallpaper.helper.SetWallpaperActivity"
+        android:exported="true"
+        android:theme="@android:style/Theme.NoDisplay"
+        android:excludeFromRecents="true"
+        android:noHistory="true"
+        android:configChanges="orientation|screenSize|keyboardHidden" />
+
+  </application>
+</manifest>
