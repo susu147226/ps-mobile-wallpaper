@@ -1,5 +1,7 @@
 namespace PSMobileWallpaper.Domain.Models;
 
+using System.Text.Json.Serialization;
+
 /// <summary>Spec §28.</summary>
 public sealed class DisplayInfo
 {
@@ -10,5 +12,6 @@ public sealed class DisplayInfo
     public ScreenOrientation Orientation { get; set; }
 
     /// <summary>Pixel count of the current orientation. Used for ratio math and progress sizing.</summary>
+    [JsonIgnore]
     public long PixelCount => (long)Width * Height;
 }

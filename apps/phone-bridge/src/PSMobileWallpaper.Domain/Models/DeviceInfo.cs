@@ -1,5 +1,7 @@
 namespace PSMobileWallpaper.Domain.Models;
 
+using System.Text.Json.Serialization;
+
 /// <summary>Spec §5.4 / §28. Unified across ADB and HDC.</summary>
 public sealed class DeviceInfo
 {
@@ -13,7 +15,8 @@ public sealed class DeviceInfo
     public DeviceState State { get; set; } = DeviceState.Unknown;
     public DisplayInfo? Display { get; set; }
 
-    /// <summary>User-facing label, e.g. "HUAWEI XXX". Spec §9.</summary>
+    /// <summary>User-facing label, e.g. "HUAWEI XXX". Spec §9 — the UI composes this itself.</summary>
+    [JsonIgnore]
     public string DisplayName =>
         string.IsNullOrWhiteSpace(Brand) ? Model : $"{Brand} {Model}".Trim();
 }

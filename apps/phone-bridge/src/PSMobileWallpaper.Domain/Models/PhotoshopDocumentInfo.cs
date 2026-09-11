@@ -1,5 +1,7 @@
 namespace PSMobileWallpaper.Domain.Models;
 
+using System.Text.Json.Serialization;
+
 /// <summary>Spec §7. Snapshot of the active Photoshop document.</summary>
 public sealed class PhotoshopDocumentInfo
 {
@@ -9,5 +11,6 @@ public sealed class PhotoshopDocumentInfo
     public double Resolution { get; set; }
     public string ColorMode { get; set; } = string.Empty;
 
+    [JsonIgnore]
     public double AspectRatio => Height == 0 ? 0d : (double)Width / Height;
 }
