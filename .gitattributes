@@ -1,0 +1,22 @@
+# Normalize line endings: LF in the repository, host-native in the working tree.
+* text=auto
+
+# Shell/CI scripts must stay LF so they remain executable on non-Windows runners.
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Windows-only build artifacts.
+*.sln text eol=crlf
+*.csproj text eol=crlf
+*.props text eol=crlf
+*.targets text eol=crlf
+
+# Binary — never touch.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.msi binary
+*.dll binary
+*.exe binary
