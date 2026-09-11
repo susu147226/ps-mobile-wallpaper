@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>PS Mobile Wallpaper</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="panel">
+      <header class="panel__header">
+        <h1 class="panel__title">PS Mobile Wallpaper</h1>
+      </header>
+
+      <section class="section">
+        <div class="section__label">设备</div>
+        <select id="device-select" class="control" disabled>
+          <option value="">未检测到设备</option>
+        </select>
+        <div class="status-row">
+          <span id="device-status-dot" class="dot dot--idle"></span>
+          <span id="device-status-text" class="status-text">未连接</span>
+        </div>
+        <div id="device-meta" class="meta"></div>
+      </section>
+
+      <section class="section">
+        <div class="section__label">屏幕尺寸</div>
+        <div id="display-size" class="value">—</div>
+      </section>
+
+      <section class="section">
+        <div class="section__label">Photoshop 画布</div>
+        <div id="canvas-size" class="value">—</div>
+        <div id="canvas-meta" class="meta"></div>
+      </section>
+
+      <section class="section">
+        <div class="section__label">裁剪方式</div>
+        <select id="crop-mode" class="control">
+          <option value="center-crop">居中裁剪</option>
+        </select>
+      </section>
+
+      <section class="section">
+        <div class="section__label">输出格式</div>
+        <select id="output-format" class="control">
+          <option value="png">PNG</option>
+          <option value="jpg">JPEG</option>
+        </select>
+      </section>
+
+      <section class="section section--token">
+        <div class="section__label">本地认证 Token（可选）</div>
+        <input
+          id="token-input"
+          class="control"
+          type="password"
+          placeholder="%AppData%\PSMobileWallpaper\auth.token"
+        />
+        <button id="token-pick" class="button button--quiet" type="button">从文件读取</button>
+      </section>
+
+      <section class="actions">
+        <button id="btn-refresh" class="button" type="button">获取手机尺寸</button>
+        <button id="btn-preview" class="button" type="button">预览裁剪结果</button>
+        <button id="btn-send" class="button" type="button">传输到手机</button>
+        <button id="btn-set-lock" class="button button--primary" type="button">设置为锁屏壁纸</button>
+      </section>
+
+      <section class="section">
+        <div id="progress" class="progress" hidden>
+          <div id="progress-text" class="progress__text">正在传输...</div>
+          <div id="progress-bar" class="progress__bar">░░░░░░░░░░░░░░░░ 0%</div>
+        </div>
+        <div id="message" class="message"></div>
+      </section>
+    </div>
+
+    <script src="main.js"></script>
+  </body>
+</html>

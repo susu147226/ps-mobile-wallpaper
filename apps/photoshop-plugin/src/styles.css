@@ -1,0 +1,194 @@
+/* UXP panels inherit Photoshop's dark chrome; these values match the host theme. */
+
+:root {
+  --bg: #232323;
+  --bg-elevated: #2b2b2b;
+  --border: #3a3a3a;
+  --text: #d8d8d8;
+  --text-dim: #9a9a9a;
+  --accent: #2680eb;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --error: #f85149;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Adobe Clean", system-ui, sans-serif;
+  font-size: 11px;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+}
+
+.panel__header {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+
+.panel__title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.section__label {
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.control {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.control:disabled {
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+
+.value {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.meta {
+  color: var(--text-dim);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-text {
+  font-size: 11px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex: 0 0 auto;
+}
+
+.dot--idle {
+  background: var(--text-dim);
+}
+
+.dot--ok {
+  background: var(--ok);
+}
+
+.dot--warn {
+  background: var(--warn);
+}
+
+.dot--error {
+  background: var(--error);
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.button {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.button:disabled {
+  color: var(--text-dim);
+  cursor: default;
+  opacity: 0.6;
+}
+
+.button--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.button--quiet {
+  padding: 4px 8px;
+  font-size: 10px;
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.progress__text {
+  font-size: 11px;
+}
+
+.progress__bar {
+  color: var(--accent);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: -0.05em;
+}
+
+.message {
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.message--ok {
+  color: var(--ok);
+}
+
+.message--error {
+  color: var(--error);
+}
+
+.message--info {
+  color: var(--text-dim);
+}

@@ -1,0 +1,20 @@
+{
+  "name": "ps-mobile-wallpaper-plugin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Photoshop UXP panel that sends a center-cropped canvas to a phone as a lock-screen wallpaper via PhoneBridge.",
+  "scripts": {
+    "build": "webpack --mode production",
+    "watch": "webpack --mode development --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "devDependencies": {
+    "@adobe/cc-ext-uxp-types": "^7.3.1",
+    "copy-webpack-plugin": "^12.0.2",
+    "ts-loader": "^9.5.2",
+    "typescript": "^5.9.2",
+    "webpack": "^5.99.0",
+    "webpack-cli": "^6.0.1"
+  }
+}

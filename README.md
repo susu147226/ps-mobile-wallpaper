@@ -1,0 +1,145 @@
+# PS Mobile Wallpaper
+
+Photoshop UXP 插件 + Windows PhoneBridge，实现「读取 PS 画布 → 自动识别手机 → 按手机屏幕尺寸居中裁剪 → USB 传输 → 设为锁屏壁纸」。
+
+## 架构
+
+```
+Photoshop UXP Plugin (TypeScript)
+        │  REST + WebSocket  127.0.0.1:18765
+        ▼
+PhoneBridge (C# / .NET)
+        │  IDeviceTransport
+        ├── AdbTransport  ──►  Android
+        └── HdcTransport  ──►  HarmonyOS
+```
+
+## 仓库结构
+
+```
+PS-Mobile-Wallpaper/
+├── apps/
+│   ├── photoshop-plugin/     # UXP 面板插件
+│   └── phone-bridge/
+│       └── src/
+│           ├── PSMobileWallpaper.Api/            # Minimal API + WebSocket
+│           ├── PSMobileWallpaper.Application/    # 壁纸工作流编排
+│           ├── PSMobileWallpaper.Domain/         # 统一模型与错误码
+│           ├── PSMobileWallpaper.Infrastructure/ # 日志、配置、认证
+│           ├── PSMobileWallpaper.Device/         # 设备发现与品牌适配
+│           ├── PSMobileWallpaper.Transport/      # IDeviceTransport / ADB / HDC
+│           ├── PSMobileWallpaper.Image/          # Center Crop 与图片编码
+│           └── PSMobileWallpaper.Wallpaper/      # 壁纸 Provider 体系
+├── packages/       # 预留：protocol / common / device-model
+├── runtime/        # 预留：随包分发的 adb / hdc
+├── tests/
+│   ├── unit/       # xUnit 单元测试
+│   └── integration/
+├── installer/wix/  # 预留：WiX Toolset 4
+├── docs/
+├── scripts/
+└── .github/workflows/
+```
+
+## 构建与测试
+
+```bash
+# PhoneBridge
+dotnet build apps/phone-bridge/PSMobileWallpaper.sln
+dotnet test  tests/unit/PSMobileWallpaper.Tests/PSMobileWallpaper.Tests.csproj
+
+# 运行 Bridge
+dotnet run --project apps/phone-bridge/src/PSMobileWallpaper.Api
+
+# Photoshop 插件
+cd apps/photoshop-plugin && npm install && npm run build
+```
+
+## 配置
+
+首次运行会在 `%AppData%\PSMobileWallpaper\` 生成：
+
+| 文件 | 用途 |
+|---|---|
+| `config.json` | 服务端口、adb/hdc 路径、图片格式与质量、壁纸模式 |
+| `auth.token` | 本地认证令牌，插件请求时需携带 |
+| `logs/psmw-*.log` | 按天滚动的运行日志 |
+
+`config.json` 默认内容：
+
+```json
+{
+  "server": { "host": "127.0.0.1", "port": 18765 },
+  "adb": { "enabled": true, "path": "" },
+  "hdc": { "enabled": true, "path": "" },
+  "image": { "format": "png", "cropMode": "center-crop", "quality": 95 },
+  "wallpaper": { "saveToGallery": true, "setLock": true }
+}
+```
+
+`adb.path` / `hdc.path` 留空表示从 `PATH` 查找；也可填可执行文件或其所在目录的绝对路径。
+
+## API（`/api/v1`）
+
+| 方法 | 路径 |
+|---|---|
+| GET | `/api/v1/devices` |
+| GET | `/api/v1/devices/{deviceId}` |
+| GET | `/api/v1/devices/{deviceId}/display` |
+| GET | `/api/v1/devices/{deviceId}/capabilities` |
+| POST | `/api/v1/images` |
+| POST | `/api/v1/images/crop` |
+| POST | `/api/v1/wallpaper/prepare` |
+| POST | `/api/v1/wallpaper/send` |
+| POST | `/api/v1/wallpaper/set-lock` |
+| POST | `/api/v1/wallpaper/set-home` |
+| POST | `/api/v1/wallpaper/set-both` |
+| WS | `/ws`（`device.*` / `transfer.*` / `wallpaper.*` 事件） |
+
+除 `/health` 外，所有请求需带 `X-PSMW-Token` 头，或 WebSocket 用 `?token=` 查询参数。
+
+## 当前进度
+
+**已完成：文档 §41 第一阶段全部 14 项。**
+
+- 项目结构与 CI
+- UXP 插件工程（§31 面板 UI、§32 状态、§33 进度）
+- PhoneBridge 八个项目，可构建、可运行
+- Domain Models（§28 / §29 / §30）
+- `IDeviceTransport` + `AdbTransport` / `HdcTransport`（§13 / §15 / §16）
+- `DeviceManager` + 品牌 `IDeviceAdapter` 体系（§5 / §25 / §26）
+- REST API（§21）+ WebSocket（§22）
+- Serilog 日志（§2.6）+ JSON 配置（§2.7 / §24）
+- xUnit 单元测试（§2.10）
+
+**尚未实现（按文档属后续阶段）：**
+
+- Phase 3 / 4：ADB / HDC 的真机联调验证
+- Phase 6：插件侧画布导出的真机验证
+- Phase 7：`IImageProcessor` 的完善与更多裁剪模式（§11 仅实现 `center-crop`）
+- Phase 9 / 10：**真实的锁屏壁纸设置尚未按品牌验证**
+
+## 重要说明
+
+### 关于壁纸能力的保守声明
+
+文档 §40 明确要求：**不得在没有验证的情况下声称某个手机品牌支持自动设置锁屏**。
+
+因此当前所有 `IWallpaperProvider`：
+
+- `CanSetLock` / `CanSetHome` / `CanSetBoth` 一律为 `false`
+- `CanSaveToGallery` 为 `true`（推送文件 + 媒体扫描，无需厂商适配）
+- 对未验证设备返回错误码 `WALLPAPER_NOT_SUPPORTED`
+
+厂商壁纸能力需在 Phase 10 用真机逐品牌验证后，才在对应 Provider 中放开。
+
+### 与文档的技术栈差异
+
+| 项 | 文档要求 | 实际 | 原因 |
+|---|---|---|---|
+| .NET 版本 | .NET 8 | **net10.0** | 本机仅装 .NET 10 SDK / 运行时；经确认后改用 net10.0。其余技术栈（ASP.NET Core Minimal API、Serilog、SkiaSharp、xUnit）与文档一致 |
+| 解决方案文件 | — | 经典 `.sln` | .NET 10 SDK 默认生成 `.slnx`；本机未装 Visual Studio，`.sln` 兼容性更好 |
+
+### 未使用的能力
+
+仓库内**不包含也不调用**任何厂商壁纸破解方案（如 `HWthemeCrack.bat`）。文档 §42 禁止绕过设备安全机制、Root、修改手机系统。

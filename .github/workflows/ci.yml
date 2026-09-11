@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "true"
+
+jobs:
+  phone-bridge:
+    name: PhoneBridge (.NET)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore apps/phone-bridge/PSMobileWallpaper.sln
+
+      - name: Build
+        run: dotnet build apps/phone-bridge/PSMobileWallpaper.sln --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test tests/unit/PSMobileWallpaper.Tests/PSMobileWallpaper.Tests.csproj --no-build --configuration Release --verbosity normal
+
+  photoshop-plugin:
+    name: Photoshop Plugin (UXP)
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        working-directory: apps/photoshop-plugin
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/photoshop-plugin/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload plugin bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: photoshop-plugin-dist
+          path: apps/photoshop-plugin/dist

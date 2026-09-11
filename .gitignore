@@ -1,0 +1,54 @@
+# ---------- .NET ----------
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+*.binlog
+TestResults/
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coveragexml
+artifacts/
+publish/
+
+# ---------- Node / UXP ----------
+node_modules/
+npm-debug.log*
+yarn-error.log*
+dist/
+*.tsbuildinfo
+.ccx
+*.psplugin
+
+# ---------- Runtime binaries (adb / hdc are not vendored) ----------
+runtime/adb/*
+runtime/hdc/*
+!runtime/adb/.gitkeep
+!runtime/hdc/.gitkeep
+
+# ---------- Local secrets / config ----------
+appsettings.Local.json
+*.local.json
+auth.token
+*.pfx
+*.snk
+
+# ---------- Installer output ----------
+installer/wix/bin/
+installer/wix/obj/
+*.msi
+*.wixpdb
+
+# ---------- OS / editor ----------
+Thumbs.db
+desktop.ini
+.DS_Store
+.idea/
+*.swp
+*~

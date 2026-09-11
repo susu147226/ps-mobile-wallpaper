@@ -1,0 +1,39 @@
+{
+  "manifestVersion": 5,
+  "id": "com.psmobilewallpaper.panel",
+  "name": "PS Mobile Wallpaper",
+  "version": "1.0.0",
+  "main": "index.html",
+  "host": [
+    {
+      "app": "PS",
+      "minVersion": "24.0.0"
+    }
+  ],
+  "entrypoints": [
+    {
+      "type": "panel",
+      "id": "psMobileWallpaperPanel",
+      "label": {
+        "default": "PS Mobile Wallpaper"
+      },
+      "minimumSize": { "width": 260, "height": 400 },
+      "maximumSize": { "width": 2000, "height": 2000 },
+      "preferredDockedSize": { "width": 300, "height": 560 },
+      "preferredFloatingSize": { "width": 340, "height": 620 },
+      "icons": []
+    }
+  ],
+  "requiredPermissions": {
+    "network": {
+      "domains": [
+        "http://127.0.0.1:18765",
+        "ws://127.0.0.1:18765"
+      ]
+    },
+    "localFileSystem": "fullAccess"
+  },
+  "featureFlags": {
+    "enableAlerts": true
+  }
+}
