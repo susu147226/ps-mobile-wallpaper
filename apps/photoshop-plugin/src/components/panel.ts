@@ -6,8 +6,36 @@ import { BridgeClient, BridgeError } from "../api/bridgeClient";
  * UXP surfaces these in Photoshop's UXPLogs file, which is the only way to diagnose the panel —
  * it has no visible console. Everything the panel decides should be traceable from there.
  */
+/**
+ * UXP surfaces these in Photoshop's UXPLogs file, which is the only way to diagnose the panel —
+ * it has no visible console. Everything the panel decides should be traceable from there.
+ */
 function log(message: string, ...rest: unknown[]): void {
   console.log(`[PSMW] ${message}`, ...rest);
+}
+
+/**
+ * Reads a `<select>` value with a fallback.
+ *
+ * UXP does not populate `select.value` the way a browser does — reading it gives `undefined`, which
+ * silently produced file names like "wallpaper_20260911_130549.undefined". Never trust it directly.
+ */
+function selectedValue(select: HTMLSelectElement, fallback: string): string {
+  const value = select.value;
+  if (typeof value === "string" && value.length > 0) {
+    return value;
+  }
+
+  const options = select.options;
+  const index = select.selectedIndex;
+  if (options && index >= 0 && index < options.length) {
+    const fromOption = options[index].value;
+    if (typeof fromOption === "string" && fromOption.length > 0) {
+      return fromOption;
+    }
+  }
+
+  return fallback;
 }
 
 /** UXP's file type; named separately so it is not confused with the DOM `File`. */
@@ -21,6 +49,7 @@ import type {
   OutputFormat,
   PreparedWallpaper,
   TransferEventPayload,
+  WallpaperCapabilities,
 } from "../models/types";
 import { DEVICE_STATE_LABELS } from "../models/types";
 import { exportActiveDocument, readActiveDocument } from "../services/photoshopService";
@@ -34,6 +63,12 @@ const CROP_MODE_LABELS: Record<CropMode, string> = {
   "top-crop": "顶部裁剪",
   "bottom-crop": "底部裁剪",
 };
+
+/**
+ * Where the auth token is remembered between panel opens. UXP plugins get their own localStorage,
+ * so the user only has to supply the token once instead of after every Photoshop restart.
+ */
+const TOKEN_STORAGE_KEY = "psmw.authToken";
 
 /** Spec §32: which dot colour each state gets. */
 const STATE_DOT_CLASS: Record<DeviceState, string> = {
@@ -52,6 +87,7 @@ export class PanelController {
   private devices: DeviceInfo[] = [];
   private selectedDeviceId = "";
   private prepared: PreparedWallpaper | null = null;
+  private capabilities: WallpaperCapabilities | null = null;
   private busy = false;
   private disposed = false;
 
@@ -103,6 +139,7 @@ export class PanelController {
 
   public async start(): Promise<void> {
     this.bindEvents();
+    this.restoreToken();
     this.updateCanvasInfo();
     this.updateActionAvailability();
 
@@ -132,14 +169,17 @@ export class PanelController {
 
   private bindEvents(): void {
     this.elements.deviceSelect.addEventListener("change", () => {
-      this.selectedDeviceId = this.elements.deviceSelect.value;
+      this.selectedDeviceId = selectedValue(this.elements.deviceSelect, this.selectedDeviceId);
       this.prepared = null;
+      this.capabilities = null;
       this.updateSelectedDevice();
       this.updateActionAvailability();
+      void this.refreshCapabilities();
     });
 
     this.elements.tokenInput.addEventListener("change", () => {
       this.client.setToken(this.elements.tokenInput.value);
+      this.persistToken(this.client.getToken());
       log("token applied; length:", this.client.getToken().length);
 
       this.setMessage(
@@ -155,7 +195,7 @@ export class PanelController {
     this.elements.refresh.addEventListener("click", () => void this.guard(() => this.refreshDevices(true)));
     this.elements.preview.addEventListener("click", () => void this.guard(() => this.preview()));
     this.elements.send.addEventListener("click", () => void this.guard(() => this.transfer()));
-    this.elements.setLock.addEventListener("click", () => void this.guard(() => this.setLockWallpaper()));
+    this.elements.setLock.addEventListener("click", () => void this.guard(() => this.applyWallpaper()));
     this.elements.outputFormat.addEventListener("change", () => {
       // Changing the format invalidates anything already cropped.
       this.prepared = null;
@@ -201,14 +241,14 @@ export class PanelController {
       this.selectedDeviceId = this.pickDefaultDevice()?.id ?? "";
     }
 
-    this.elements.deviceSelect.value = this.selectedDeviceId;
+    this.selectDevice(this.selectedDeviceId);
     this.updateSelectedDevice();
 
     if (explicit) {
       await this.refreshDisplay();
     }
 
-    this.updateActionAvailability();
+    await this.refreshCapabilities();
   }
 
   private renderDeviceOptions(): void {
@@ -267,6 +307,50 @@ export class PanelController {
       : "—";
   }
 
+  /**
+   * Asks the bridge what this device can actually do, then adapts the wallpaper button to it.
+   *
+   * The answer is device-specific and honest: EMUI, for instance, reports canSetLock = false
+   * because its lock screen ignores anything a third-party app writes. Offering a "set lock
+   * wallpaper" button there would only ever produce a failure.
+   */
+  private async refreshCapabilities(): Promise<void> {
+    const device = this.selectedDevice;
+    if (!device) {
+      this.capabilities = null;
+      this.updateWallpaperButton();
+      return;
+    }
+
+    try {
+      this.capabilities = await this.client.getCapabilities(device.id);
+      log("capabilities:", JSON.stringify(this.capabilities));
+    } catch (error) {
+      log("capabilities fetch failed:", String(error));
+      this.capabilities = null;
+    }
+
+    this.updateWallpaperButton();
+  }
+
+  /** Labels the button after what the device supports, and disables it when neither does. */
+  private updateWallpaperButton(): void {
+    const button = this.elements.setLock;
+    const device = this.selectedDevice;
+    const usable = !!device && device.state === "Connected" && !!device.display;
+    const capabilities = this.capabilities;
+
+    if (capabilities?.canSetLock) {
+      button.textContent = "设置为锁屏壁纸";
+    } else if (capabilities?.canSetHome) {
+      button.textContent = "设置为主屏壁纸";
+    } else {
+      button.textContent = "设置壁纸（设备不支持）";
+    }
+
+    button.disabled = this.busy || !usable || (!capabilities?.canSetLock && !capabilities?.canSetHome);
+  }
+
   /** Spec §9: the phone's size is what the canvas gets cropped to. */
   private async refreshDisplay(): Promise<void> {
     const device = this.selectedDevice;
@@ -286,7 +370,7 @@ export class PanelController {
       this.setMessage(describeError(error), "error");
     }
 
-    this.updateActionAvailability();
+    await this.refreshCapabilities();
   }
 
   private updateCanvasInfo(): void {
@@ -312,8 +396,10 @@ export class PanelController {
     this.updateCanvasInfo();
     this.setMessage("正在导出画布...", "info");
 
-    const format = this.elements.outputFormat.value as OutputFormat;
-    const mode = this.elements.cropMode.value as CropMode;
+    const format = selectedValue(this.elements.outputFormat, "png") as OutputFormat;
+    const mode = selectedValue(this.elements.cropMode, "center-crop") as CropMode;
+    log("preview: format =", format, " mode =", mode);
+
     const exportedPath = await exportActiveDocument(format);
 
     const display = device.display ?? (await this.client.getDisplay(device.id));
@@ -361,17 +447,23 @@ export class PanelController {
     }
   }
 
-  /** Spec §17 / §20: save to the gallery and set the lock screen. */
-  private async setLockWallpaper(): Promise<void> {
+  /** Spec §17 / §20. Applies the wallpaper to whichever screen the device actually supports. */
+  private async applyWallpaper(): Promise<void> {
     const prepared = await this.ensurePrepared();
     if (!prepared) {
       return;
     }
 
-    this.setMessage("正在设置锁屏壁纸...", "info");
+    const useLock = !!this.capabilities?.canSetLock;
+    const target = useLock ? "锁屏" : "主屏";
+
+    this.setMessage(`正在设置${target}壁纸...`, "info");
 
     try {
-      const result = await this.client.setLockWallpaper(prepared.deviceId, prepared.imagePath);
+      const result = useLock
+        ? await this.client.setLockWallpaper(prepared.deviceId, prepared.imagePath)
+        : await this.client.setHomeWallpaper(prepared.deviceId, prepared.imagePath);
+
       this.setMessage(result.message, "ok");
     } catch (error) {
       this.setMessage(describeError(error), "error");
@@ -440,6 +532,34 @@ export class PanelController {
   }
 
   /**
+   * Remembers the token so the user does not have to paste it after every Photoshop restart.
+   * The value stays local to the plugin's own storage; nothing is sent anywhere.
+   */
+  private persistToken(token: string): void {
+    try {
+      if (token) {
+        localStorage.setItem(TOKEN_STORAGE_KEY, token);
+      } else {
+        localStorage.removeItem(TOKEN_STORAGE_KEY);
+      }
+    } catch (error) {
+      log("could not persist token:", String(error));
+    }
+  }
+
+  private restoreToken(): void {
+    try {
+      const saved = localStorage.getItem(TOKEN_STORAGE_KEY);
+      if (saved) {
+        this.client.setToken(saved);
+        this.elements.tokenInput.value = saved;
+      }
+    } catch (error) {
+      log("could not restore token:", String(error));
+    }
+  }
+
+  /**
    * Reads the token file the user picks. UXP cannot reach %AppData% itself, so the user has to
    * choose the file once; the picker is pointed at the bridge's folder to make that easy.
    */
@@ -456,6 +576,7 @@ export class PanelController {
       if (token) {
         this.elements.tokenInput.value = token;
         this.client.setToken(token);
+        this.persistToken(token);
         this.setMessage("已从文件读取并应用 Token。", "ok");
       }
     } catch (error) {
@@ -485,6 +606,26 @@ export class PanelController {
     }
   }
 
+  /**
+   * Selects an entry in the device list. Assigning `.value` alone is not reliable in UXP, so the
+   * index is set as well.
+   */
+  private selectDevice(deviceId: string): void {
+    const select = this.elements.deviceSelect;
+    select.value = deviceId;
+
+    if (selectedValue(select, "") === deviceId) {
+      return;
+    }
+
+    for (let index = 0; index < select.options.length; index += 1) {
+      if (select.options[index].value === deviceId) {
+        select.selectedIndex = index;
+        return;
+      }
+    }
+  }
+
   private get selectedDevice(): DeviceInfo | undefined {
     return this.devices.find((device) => device.id === this.selectedDeviceId);
   }
@@ -497,7 +638,10 @@ export class PanelController {
     this.elements.refresh.disabled = this.busy;
     this.elements.preview.disabled = this.busy || !usable;
     this.elements.send.disabled = this.busy || !usable || !hasDisplay;
-    this.elements.setLock.disabled = this.busy || !usable || !hasDisplay;
+
+    // The wallpaper button is owned by updateWallpaperButton: its label and enabled state depend on
+    // the device's reported capabilities, not just on whether a device is selected.
+    this.updateWallpaperButton();
   }
 
   private setStatus(state: DeviceState): void {
@@ -534,6 +678,14 @@ export class PanelController {
     try {
       await operation();
     } catch (error) {
+      // Log as well as display: an error shown only in the panel is invisible in UXPLogs, which
+      // is the only place it can be diagnosed after the fact.
+      log("operation failed:", error instanceof Error ? error.message : String(error));
+
+      if (error instanceof Error && error.stack) {
+        log("stack:", error.stack);
+      }
+
       this.setMessage(describeError(error), "error");
     } finally {
       this.busy = false;

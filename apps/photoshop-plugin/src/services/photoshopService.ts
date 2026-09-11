@@ -38,9 +38,13 @@ export async function exportActiveDocument(format: OutputFormat): Promise<string
     throw new NoActiveDocumentError();
   }
 
+  console.log(`[PSMW] exporting "${document.name}" as ${format}`);
+
   const folder = await getExportFolder();
   const fileName = buildFileName(format);
   const file = await folder.createFile(fileName, { overwrite: true });
+
+  console.log(`[PSMW] exporting to ${file.nativePath}`);
 
   // Photoshop only permits document mutation inside a modal execution scope.
   await core.executeAsModal(
@@ -53,6 +57,8 @@ export async function exportActiveDocument(format: OutputFormat): Promise<string
     },
     { commandName: "PS Mobile Wallpaper: 导出画布" }
   );
+
+  console.log(`[PSMW] export finished: ${file.nativePath}`);
 
   return file.nativePath;
 }

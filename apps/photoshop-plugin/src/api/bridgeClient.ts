@@ -118,6 +118,11 @@ export class BridgeClient {
     return this.request<WallpaperResult>("POST", "/wallpaper/set-lock", { deviceId, imagePath });
   }
 
+  /** `POST /api/v1/wallpaper/set-home`. The public WallpaperManager path, so the one that works. */
+  public async setHomeWallpaper(deviceId: string, imagePath: string): Promise<WallpaperResult> {
+    return this.request<WallpaperResult>("POST", "/wallpaper/set-home", { deviceId, imagePath });
+  }
+
   /** Spec §22. Opens the event stream. Returns a disposer that closes the socket. */
   public connectEvents(
     onEvent: (event: BridgeEvent) => void,
