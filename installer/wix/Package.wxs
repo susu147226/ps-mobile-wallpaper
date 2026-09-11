@@ -2,37 +2,50 @@
 <!--
   Installer for the PS Mobile Wallpaper PhoneBridge.
 
-  Installs a self-contained executable, so the target machine needs neither the .NET runtime nor an
-  Adobe account. Layout is staged by scripts/build-installer.ps1 into installer/wix/staging/.
+  Per-user, not per-machine, and that is deliberate:
 
-  Deliberately does NOT register a Windows service: the bridge keeps its config and auth token under
-  the *user's* %AppData%\PSMobileWallpaper (spec §2.7 / §23), which a LocalSystem service cannot see.
-  Auto-start is left to the user via a Startup-folder shortcut (see README).
+    * The bridge keeps its config and auth token under the user's %AppData%\PSMobileWallpaper
+      (spec §2.7 / §23), so a per-machine install would split state across accounts.
+    * No elevation is needed, so the package can also drop the Photoshop panel straight into
+      the UXP sideload folder without fighting per-machine-to-per-user redirection.
+
+  The published executable is self-contained: no .NET runtime and no Adobe account required.
+  Layout is staged by scripts/build-installer.ps1 into installer/wix/staging/.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
 
   <Package
-      Name="PS Mobile Wallpaper PhoneBridge"
+      Name="PS Mobile Wallpaper"
       Manufacturer="PS Mobile Wallpaper"
       Version="$(var.ProductVersion)"
-      UpgradeCode="83C0D938-4B17-4735-863A-1FBB1D361B8A"
-      Scope="perMachine"
+      UpgradeCode="0EFA62FF-445D-4FCD-BD9F-D4605B20DAD2"
+      Scope="perUser"
       Compressed="yes">
 
     <SummaryInformation
         Description="Local bridge connecting the PS Mobile Wallpaper Photoshop panel to an Android or HarmonyOS phone over USB."
         Manufacturer="PS Mobile Wallpaper" />
 
-    <MajorUpgrade DowngradeErrorMessage="A newer version of PS Mobile Wallpaper PhoneBridge is already installed." />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of PS Mobile Wallpaper is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
-    <Launch
-        Condition="VersionNT64"
-        Message="PS Mobile Wallpaper PhoneBridge requires 64-bit Windows." />
-
-    <StandardDirectory Id="ProgramFiles64Folder">
+    <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="INSTALLFOLDER" Name="PS Mobile Wallpaper">
-        <Directory Id="PluginFolder" Name="plugin" />
+        <Directory Id="HelpersFolder" Name="helpers" />
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Where Photoshop looks for sideloaded UXP plugins. Deployed on install so the panel shows up
+         in the Plug-ins menu after a Photoshop restart, with no Adobe account involved. -->
+    <StandardDirectory Id="AppDataFolder">
+      <Directory Id="AdobeFolder" Name="Adobe">
+        <Directory Id="AdobeUxpFolder" Name="UXP">
+          <Directory Id="AdobeUxpPluginsFolder" Name="Plugins">
+            <Directory Id="AdobeUxpExternalFolder" Name="External">
+              <Directory Id="PluginDeployFolder" Name="com.psmobilewallpaper.panel" />
+            </Directory>
+          </Directory>
+        </Directory>
       </Directory>
     </StandardDirectory>
 
@@ -42,39 +55,44 @@
 
     <StandardDirectory Id="DesktopFolder" />
 
-    <Feature Id="Main" Title="PhoneBridge" Level="1">
+    <Feature Id="Main" Title="PS Mobile Wallpaper" Level="1">
       <ComponentGroupRef Id="BridgeComponents" />
-      <ComponentGroupRef Id="PluginComponents" />
+      <ComponentGroupRef Id="HelperComponents" />
       <ComponentGroupRef Id="ShortcutComponents" />
+      <!-- Optional: some users load the panel through the UXP Developer Tool instead. -->
+      <ComponentGroupRef Id="PluginComponents" />
     </Feature>
   </Package>
 
   <Fragment>
     <ComponentGroup Id="BridgeComponents" Directory="INSTALLFOLDER">
       <Component Id="BridgeExecutable" Guid="E9F01764-2019-480A-8F07-DF27EF173F7C">
-        <File Id="BridgeExe"
-              Source="staging\app\PSMobileWallpaper.Api.exe"
-              KeyPath="yes" />
+        <File Id="BridgeExe" Source="staging\app\PSMobileWallpaper.Api.exe" KeyPath="yes" />
       </Component>
 
       <Component Id="BridgeAppSettings" Guid="A1E29AEC-70F4-418B-8587-7A157D8DC706">
-        <File Id="AppSettingsJson"
-              Source="staging\app\appsettings.json"
-              KeyPath="yes" />
+        <File Id="AppSettingsJson" Source="staging\app\appsettings.json" KeyPath="yes" />
       </Component>
     </ComponentGroup>
   </Fragment>
 
   <Fragment>
-    <!-- The UXP panel ships alongside the bridge so it can be sideloaded without an Adobe account. -->
-    <ComponentGroup Id="PluginComponents" Directory="PluginFolder">
-      <Component Id="PluginBundle" Guid="87C98EE4-F07D-4C51-8FE1-6AF5B0B36AE7">
-        <File Id="PluginManifest"
-              Source="staging\plugin\manifest.json"
-              KeyPath="yes" />
+    <!-- Installed on demand by the bridge when a device needs a wallpaper set. -->
+    <ComponentGroup Id="HelperComponents" Directory="HelpersFolder">
+      <Component Id="WallpaperHelperApk" Guid="8C2792BD-C8F4-4A7C-B712-497424ED9436">
+        <File Id="HelperApk" Source="staging\app\helpers\psmw-wallpaper-helper.apk" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="PluginComponents" Directory="PluginDeployFolder">
+      <Component Id="PluginBundle" Guid="7B8D6992-CF39-4159-A0DE-DD48E880A6CE">
+        <File Id="PluginManifest" Source="staging\plugin\manifest.json" KeyPath="yes" />
         <File Id="PluginMain" Source="staging\plugin\main.js" />
         <File Id="PluginHtml" Source="staging\plugin\index.html" />
         <File Id="PluginStyles" Source="staging\plugin\styles.css" />
+        <RemoveFolder Id="RemovePluginFolder" On="uninstall" />
       </Component>
     </ComponentGroup>
   </Fragment>

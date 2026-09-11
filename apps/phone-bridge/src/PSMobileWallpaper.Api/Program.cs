@@ -149,7 +149,14 @@ app.Urls.Add($"http://{serverOptions.Host}:{serverOptions.Port}");
 app.UseWebSockets();
 app.UseMiddleware<LocalAuthMiddleware>();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok", version = "1.0.0" }));
+app.MapGet("/health", () => Results.Ok(new
+{
+    status = "ok",
+    // Read from the assembly rather than a literal: a hardcoded value shipped the wrong version
+    // and made it impossible to tell which build was running.
+    version = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
+    apiVersion = "v1",
+}));
 app.MapDeviceEndpoints();
 app.MapImageEndpoints();
 app.MapWallpaperEndpoints();

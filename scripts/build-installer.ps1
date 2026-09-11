@@ -12,15 +12,23 @@
     nor an Adobe account.
 
 .PARAMETER Version
-    Product version. Must be a three-part version, e.g. 1.0.0.
+    Product version. Must be a three-part version, e.g. 1.1.0.
 
 .PARAMETER Configuration
     Build configuration. Defaults to Release.
+
+.PARAMETER AndroidSdkDirectory
+    Android SDK used to build the wallpaper helper APK.
+
+.PARAMETER JavaSdkDirectory
+    JDK used to build the wallpaper helper APK.
 #>
 [CmdletBinding()]
 param(
-    [string]$Version = "1.0.0",
-    [string]$Configuration = "Release"
+    [string]$Version = "1.1.0",
+    [string]$Configuration = "Release",
+    [string]$AndroidSdkDirectory = "C:\Android\Sdk",
+    [string]$JavaSdkDirectory = "C:\Android\Jdk"
 )
 
 $ErrorActionPreference = "Stop"
@@ -30,6 +38,7 @@ $staging = Join-Path $repoRoot "installer/wix/staging"
 $artifacts = Join-Path $repoRoot "artifacts"
 $apiProject = Join-Path $repoRoot "apps/phone-bridge/src/PSMobileWallpaper.Api/PSMobileWallpaper.Api.csproj"
 $pluginDir = Join-Path $repoRoot "apps/photoshop-plugin"
+$helperDir = Join-Path $repoRoot "apps/wallpaper-helper"
 
 Write-Host "==> Repo:      $repoRoot"
 Write-Host "==> Version:   $Version"
@@ -80,7 +89,37 @@ finally {
 New-Item -ItemType Directory -Force -Path (Join-Path $staging "plugin") | Out-Null
 Copy-Item (Join-Path $pluginDir "dist/*") (Join-Path $staging "plugin") -Recurse -Force
 
-# --- 3. Build the MSI ---------------------------------------------------------
+# --- 3. Build the Android wallpaper helper ------------------------------------
+# AOT must stay off: with it the app dies on startup with UnsatisfiedLinkError on n_onCreate.
+Write-Host "`n==> Building the Android wallpaper helper..."
+Push-Location $helperDir
+try {
+    dotnet build -f net10.0-android -c $Configuration `
+        -p:AndroidSdkDirectory=$AndroidSdkDirectory `
+        -p:JavaSdkDirectory=$JavaSdkDirectory `
+        -p:RunAOTCompilation=false `
+        -p:AndroidEnableProfiledAot=false `
+        --nologo
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "The helper APK failed to build. Ensure the Android SDK and JDK exist at " +
+              "'$AndroidSdkDirectory' and '$JavaSdkDirectory' (see apps/wallpaper-helper/README.md)."
+    }
+}
+finally {
+    Pop-Location
+}
+
+$helperApk = Join-Path $helperDir "bin/$Configuration/net10.0-android/android-arm64/com.psmobilewallpaper.helper-Signed.apk"
+if (-not (Test-Path $helperApk)) {
+    throw "Expected helper APK not found at '$helperApk'."
+}
+
+# The bridge looks for it beside the executable (see BridgePaths.HelperApkPath).
+New-Item -ItemType Directory -Force -Path (Join-Path $staging "app/helpers") | Out-Null
+Copy-Item $helperApk (Join-Path $staging "app/helpers/psmw-wallpaper-helper.apk") -Force
+
+# --- 4. Build the MSI ---------------------------------------------------------
 Write-Host "`n==> Building the MSI with WiX..."
 if (-not (Get-Command wix -ErrorAction SilentlyContinue)) {
     throw "The 'wix' tool was not found. Install it with: dotnet tool install --global wix --version 4.0.6"
@@ -100,7 +139,7 @@ finally {
     Pop-Location
 }
 
-# --- 4. Portable ZIP ----------------------------------------------------------
+# --- 5. Portable ZIP ----------------------------------------------------------
 Write-Host "`n==> Packing the portable ZIP..."
 $portableStage = Join-Path $staging "portable"
 New-Item -ItemType Directory -Force -Path $portableStage | Out-Null
@@ -115,8 +154,14 @@ PS Mobile Wallpaper - PhoneBridge (portable)
 1. Run PSMobileWallpaper.Api.exe. The first run creates:
      %AppData%\PSMobileWallpaper\config.json
      %AppData%\PSMobileWallpaper\auth.token
-2. Load the Photoshop panel from the 'plugin' folder using the UXP Developer Tool.
+2. Load the Photoshop panel (the 'plugin' folder) by copying it to:
+     %AppData%\Adobe\UXP\Plugins\External\com.psmobilewallpaper.panel
+   then restart Photoshop. It appears under the Plug-ins menu.
+   (The MSI installer does this step for you.)
 3. Copy the contents of auth.token into the panel's token field.
+
+The Android wallpaper helper is in 'helpers\'. The bridge installs it on the
+phone automatically the first time a wallpaper is set.
 
 The bridge listens on http://127.0.0.1:18765 and only accepts requests that
 carry the token.
@@ -125,7 +170,7 @@ carry the token.
 $zipPath = Join-Path $artifacts "PSMobileWallpaper-PhoneBridge-$Version-x64.zip"
 Compress-Archive -Path (Join-Path $portableStage "*") -DestinationPath $zipPath -Force
 
-# --- 5. Plugin ZIP ------------------------------------------------------------
+# --- 6. Plugin ZIP ------------------------------------------------------------
 $pluginZip = Join-Path $artifacts "PSMobileWallpaper-Plugin-$Version.zip"
 Compress-Archive -Path (Join-Path $staging "plugin/*") -DestinationPath $pluginZip -Force
 
