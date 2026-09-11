@@ -121,6 +121,25 @@ Bridge 的配置与认证令牌按 §2.7 / §23 存放在**用户**的 `%AppData
 
 除 `/health` 外，所有请求需带 `X-PSMW-Token` 头，或 WebSocket 用 `?token=` 查询参数。
 
+> **它不是一个可以浏览的网站。** Bridge 是给 Photoshop 插件调用的本地 API，根路径没有端点，
+> 用浏览器直接打开会得到 `PERMISSION_DENIED` —— 那正是 §23 的防护在生效（浏览器不会带 Token）。
+>
+> 想确认服务是否在跑，访问唯一免 Token 的端点：
+>
+> ```bash
+> curl http://127.0.0.1:18765/health
+> # {"status":"ok","version":"1.0.0"}
+> ```
+>
+> 想手动查看设备列表，需要带上 Token：
+>
+> ```bash
+> curl -H "X-PSMW-Token: $(cat "$APPDATA/PSMobileWallpaper/auth.token")" \
+>      http://127.0.0.1:18765/api/v1/devices
+> ```
+
+真正的人机界面是 Photoshop 面板：把 `auth.token` 的内容粘进面板的 Token 输入框即可。
+
 ## 当前进度
 
 **Phase 1（文档 §41 全部 14 项）— 已完成**
