@@ -225,32 +225,30 @@ center-fit 必须留边、其余模式必须铺满、三种纵向锚定的取样
 
 ## HarmonyOS 壁纸：已实测判定为不可行
 
-在 EMA-AL00U（OpenHarmony 7.0.0.105 / API 26）上做了完整的可行性验证。
-
-**结论：无法实现自动设置壁纸，缺少华为开发者账号与签名链。**
-
-逐项证据：
+在 EMA-AL00U（OpenHarmony 7.0.0.105 / API 26）上做了完整的可行性验证，**用一个签名可安装的
+诊断 HAP 逐层排除**（不是靠推断）。
 
 | 环节 | 结论 | 依据 |
 |---|---|---|
-| 无 shell 命令可用 | ❌ | 设备上无 `wallpaper`；`WallpaperManagerService` 经 hidumper 无任何输出 |
-| 构建 HAP | ✅ 可以 | 用 DevEco 自带 hvigor + SDK 实测 `BUILD SUCCESSFUL` |
-| **签名 HAP** | ❌ **不可能** | SDK 密钥库里的应用证书是**自签名**的，无法组成合法链；`hap-sign-tool` 报 `verify certificate chain failed` |
-| 安装到设备 | ❌ | HarmonyOS NEXT 只信任华为签发证书；SDK 里也**没有** `OpenHarmonyApplication.pem` |
-| 壁纸 API | ⚠️ | `@ohos.wallpaper` 的 `setWallpaper` 标注 `@deprecated since 9`，SDK 中无替代 API |
-| 权限 | ⚠️ | `ohos.permission.SET_WALLPAPER` 为系统级；SDK 的 debug profile 模板 `apl` 为 `normal` |
+| 构建 + **签名** HAP | ✅ 可行 | 需 DevEco 登录华为账号自动生成签名；`SignHap` 成功，`install bundle successfully` |
+| 安装到设备 | ✅ 可行 | 签名正确即可安装（SDK 自带的 OpenHarmony 证书不行，会 `verify certificate chain failed`） |
+| **`SET_WALLPAPER` 权限** | ✅ **可获取** | `checkAccessToken -> 0`、`requestPermissionsFromUser -> [0]`，普通签名应用即可 |
+| `GET_WALLPAPER` 权限 | ❌ 系统级 | 声明后**安装直接失败**：`grant request permissions failed` |
+| 读取图片文件 | ✅ 可行 | 把资源图写进应用自己沙箱后 `source file readable` |
+| **`setWallpaper` 实际生效** | ❌ **不生效** | API 返回成功，但**锁屏和主屏都没有任何变化** |
 
-证书链诊断（`openssl x509 -noout -subject -issuer`）：
+**决定性结论**：`@ohos.wallpaper` 的 `setWallpaper` 自 API 9 起标注废弃，在 API 26 上是一个
+**"报成功但不做事"的存根**。两个调用形式都要单独测：
 
-```
-openharmony application release : subject == issuer  ← 自签名，非 CA 签发
-openharmony application CA      : issuer = Application Root CA
-Application Root CA             : 自签名根
-```
+- `await setWallpaper(...)`（Promise 形式）—— **永远不 resolve，也不 reject**
+- `setWallpaper(..., callback)`（回调形式）—— 回调返回**成功**，但屏幕不变
 
-因此鸿蒙设备目前**只支持"保存到相册"**（已可用），壁纸设置返回 `WALLPAPER_NOT_SUPPORTED`。
+**这不是权限或路径问题**：权限已授予、文件可读、API 报成功，而屏幕纹丝不动。
 
-如需推进，前置条件是：华为开发者账号 + DevEco Studio 中配置签名 + 实名认证。
+> 教训（和华为 EMUI 那次一样）：**判断壁纸是否设置成功，只能看屏幕**。
+> API 返回值、dumpsys、应用日志的"成功"都不是证据。本项目因此把两种"假成功"都记在案。
+
+因此鸿蒙设备目前**只支持"保存到相册"**（已可用），壁纸设置如实返回 `WALLPAPER_NOT_SUPPORTED`。
 
 ## 还没做到
 
