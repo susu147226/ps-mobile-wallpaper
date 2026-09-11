@@ -1,0 +1,7 @@
+{
+  "modelVersion": "6.0.2",
+  "name": "harmony-helper",
+  "version": "1.0.0",
+  "description": "Receives a wallpaper from the PS Mobile Wallpaper bridge and saves it to the gallery",
+  "dependencies": {}
+}

@@ -128,6 +128,9 @@ builder.Services.AddSingleton<IWallpaperService>(sp => new WallpaperService(
 // ---- Application ----------------------------------------------------------
 builder.Services.AddSingleton<WallpaperWorkflow>();
 
+// Holds the last prepared wallpaper so a phone-side helper can download it (see the endpoint).
+builder.Services.AddSingleton<PreparedImageStore>();
+
 // ---- Background workers ---------------------------------------------------
 builder.Services.AddHostedService<DeviceEventForwarder>();
 

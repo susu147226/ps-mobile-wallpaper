@@ -308,11 +308,13 @@ export class PanelController {
     const capabilities = this.capabilities;
 
     if (capabilities?.canSetLock) {
-      button.textContent = "设置为锁屏壁纸";
+      button.textContent = "自动设为锁屏壁纸";
     } else if (capabilities?.canSetHome) {
-      button.textContent = "设置为主屏壁纸";
+      button.textContent = "自动设为桌面壁纸";
     } else {
-      button.textContent = "设置壁纸（设备不支持）";
+      // Nothing automatic is available here, which is the common case. The gallery route still
+      // works, so point at it rather than leaving a dead button unexplained.
+      button.textContent = "自动设置（本机不支持，请用相册）";
     }
 
     button.disabled = this.busy || !usable || (!capabilities?.canSetLock && !capabilities?.canSetHome);
@@ -394,19 +396,46 @@ export class PanelController {
     this.updateActionAvailability();
   }
 
-  /** Spec §13: push the prepared image over ADB/HDC into the phone gallery. */
+  /**
+   * Gets the prepared image onto the phone.
+   *
+   * Two routes, because one does not cover both platforms:
+   *
+   *   Android — the bridge pushes the file straight into the gallery.
+   *   HarmonyOS — the bridge cannot write the media library over HDC, so the phone-side
+   *   "PSMW 壁纸助手" app downloads the image and the user saves it with one tap. The bridge always
+   *   keeps the last prepared image available for that app, so this only has to explain the step.
+   */
   private async transfer(): Promise<void> {
     const prepared = await this.ensurePrepared();
     if (!prepared) {
       return;
     }
 
+    const device = this.selectedDevice;
+
+    if (device?.transport === "HDC") {
+      this.setMessage(
+        "图片已准备好。请在手机上打开「PSMW 壁纸助手」应用，\n" +
+          "点其中的「保存」按钮把图片存进相册。\n\n" +
+          "然后在相册里打开它 → 更多 → 设为壁纸（可选锁屏或桌面）。",
+        "ok"
+      );
+      return;
+    }
+
     this.showProgress("正在传输...", 0);
-    this.setMessage("正在传输到手机...", "info");
+    this.setMessage("正在保存到手机相册...", "info");
 
     try {
       const result = await this.client.sendWallpaper(prepared.deviceId, prepared.imagePath);
-      this.setMessage(result.message, "ok");
+
+      this.setMessage(
+        `${result.message}\n\n` +
+          "下一步请在手机上手动设置：\n" +
+          "打开「相册」→ 找到 PSMobileWallpaper 相册 → 打开图片 → 更多 → 设为壁纸（可选锁屏或桌面）",
+        "ok"
+      );
     } catch (error) {
       this.setMessage(describeError(error), "error");
     } finally {

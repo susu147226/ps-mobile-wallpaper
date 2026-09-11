@@ -50,6 +50,54 @@ public sealed class WallpaperService : IWallpaperService
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Spec §20, gallery half. Never reports failure because a wallpaper could not be set: it only
+    /// does the copy, and says so.
+    /// </summary>
+    public async Task<WallpaperResult> SaveToGalleryAsync(
+        DeviceInfo device,
+        string imagePath,
+        CancellationToken cancellationToken = default)
+    {
+        var provider = FindProvider(device);
+        if (provider is null)
+        {
+            return WallpaperResult.Fail(
+                device.Id,
+                ErrorCodes.WallpaperNotSupported,
+                $"No wallpaper provider supports {device.DisplayName}.");
+        }
+
+        var transport = _transports.FirstOrDefault(candidate => candidate.Kind == device.Transport);
+        if (transport is null)
+        {
+            return WallpaperResult.Fail(
+                device.Id,
+                ErrorCodes.TransportError,
+                $"No {device.Transport} transport is registered.");
+        }
+
+        if (!File.Exists(imagePath))
+        {
+            return WallpaperResult.Fail(device.Id, ErrorCodes.ImageNotFound, $"Image not found: {imagePath}");
+        }
+
+        var capabilities = await provider
+            .GetCapabilitiesAsync(device, transport, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!capabilities.CanSaveToGallery)
+        {
+            return WallpaperResult.Fail(
+                device.Id,
+                ErrorCodes.WallpaperNotSupported,
+                $"Saving to the gallery is not supported for {device.DisplayName}.");
+        }
+
+        return await SaveToGalleryAsync(provider, device, transport, imagePath, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     public Task<WallpaperResult> SetLockWallpaperAsync(
         DeviceInfo device,
         string imagePath,

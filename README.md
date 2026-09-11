@@ -266,16 +266,52 @@ PermissionName: ohos.permission.ACTIVATE_THEME_PACKAGE
 > 教训（和华为 EMUI 那次一样）：**判断壁纸是否设置成功，只能看屏幕**。
 > API 返回值、dumpsys、应用日志的"成功"都不是证据。本项目因此把两种"假成功"都记在案。
 
-因此鸿蒙设备目前**只支持"保存到相册"**（已可用），壁纸设置如实返回 `WALLPAPER_NOT_SUPPORTED`。
+桥接层对鸿蒙的**自动**设置一律返回 `WALLPAPER_NOT_SUPPORTED`（它确实做不到），
+但面板会引导用户走上面那条**经应用转存相册**的可用链路。
 
-### 可行的替代：保存到相册 + 用户在相册中设置
+### 结论：自动设置不可行，但有**已验证可用**的替代链路
 
-相册本身具备"设为锁屏/桌面壁纸"的功能。所以鸿蒙上可用的完整链路是：
+系统层的两条路都被堵死（`setWallpaper` 是空存根；`WallpaperServiceExtAbility` 需要系统级权限）。
+但**相册本身能设壁纸** —— 相册是有系统权限的系统应用。所以可行的链路是"把图片送进相册，用户在相册里设置"。
 
-1. Bridge 把裁剪好的图片推送到设备相册（**这项已经可用**）
-2. 用户在系统相册里长按图片 → 设为壁纸
+难点在于**怎么把图片送进相册**：
 
-这不是自动设置，但真实可用，且不需要任何系统权限。
+| 尝试 | 结果 |
+|---|---|
+| hdc 直接写入媒体库 | ❌ `/storage/media/100/local/files/Photo` 拒绝 hdc 写入；能写的 `Docs` 不被媒体库收录 |
+| 应用读 hdc 写的文件 | ❌ 应用读不到 `/data/local/tmp`（13900002） |
+| **应用自己写相册** | ✅ **可行** |
+
+最终方案（`apps/harmony-helper`）：
+
+1. 面板点「保存到相册」→ Bridge 裁剪好图片并保留（`GET /api/v1/wallpaper/latest-image`）
+2. `hdc rport tcp:18766 tcp:18765` 让**手机反向访问主机**的 Bridge
+3. 手机上的「PSMW 壁纸助手」应用下载图片并显示
+4. 用户点应用里的 **`SaveButton`**（鸿蒙安全控件：**免权限**，由点击授权写入相册）
+5. 用户在相册里选「设为壁纸」
+
+**已实测验证**：应用取到 20224 字节，保存后 `mediatool` 在媒体库中查到该资源，
+且回读的 sha256 与 Bridge 裁剪产物**逐字节一致**。
+
+> 全程不需要 `ACTIVATE_THEME_PACKAGE` 等系统级权限，也不需要 hdc 写媒体库。
+
+### 构建这个应用
+
+工程在 `apps/harmony-helper`。**注意两点**：
+
+1. **路径不能含空格** —— DevEco 会报 `Invalid path`。含空格的仓库路径需要先复制到无空格目录再构建。
+2. **签名 profile 绑定 bundle 名** —— DevEco 的「自动生成签名」目前产出的是绑定
+   `com.example.myapplication` 的 profile，所以工程的 `bundleName` 也设成了它。
+   要换成正式包名，需在 DevEco 里重新生成签名。
+
+构建：
+
+```bash
+cd apps/harmony-helper
+hvigorw --mode module -p product=default -p buildMode=debug assembleHap --no-daemon
+hdc install -r entry/build/default/outputs/default/entry-default-signed.hap
+hdc rport tcp:18766 tcp:18765      # 让手机能访问主机的 Bridge
+```
 
 ## 还没做到
 

@@ -1,0 +1,36 @@
+{
+  // Signing is intentionally not committed.
+  //
+  // DevEco Studio's "Automatically generate signature" fills signingConfigs with a per-account
+  // debug certificate and keeps the keystore under %USERPROFILE%\.ohos\config. Those values are
+  // account credentials and do not belong in a public repository:
+  //
+  //   File -> Project Structure -> Signing Configs -> check "Automatically generate signature"
+  //
+  // The generated profile is bound to the bundle name, so app.json5's bundleName has to match
+  // whatever the signature was issued for.
+  "app": {
+    "signingConfigs": [],
+    "products": [
+      {
+        "name": "default",
+        "targetSdkVersion": "6.0.2(22)",
+        "compatibleSdkVersion": "6.0.2(22)",
+        "runtimeOS": "HarmonyOS"
+      }
+    ],
+    "buildModeSet": [
+      { "name": "debug" },
+      { "name": "release" }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        { "name": "default", "applyToProducts": ["default"] }
+      ]
+    }
+  ]
+}

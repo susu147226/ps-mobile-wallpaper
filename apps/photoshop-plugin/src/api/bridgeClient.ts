@@ -98,7 +98,7 @@ export class BridgeClient {
 
   /** `POST /api/v1/wallpaper/send` — pushes the prepared image to the phone gallery. */
   public async sendWallpaper(deviceId: string, imagePath: string): Promise<WallpaperResult> {
-    return this.request<WallpaperResult>("POST", "/wallpaper/send", { deviceId, imagePath });
+    return this.request<WallpaperResult>("POST", "/wallpaper/save-to-gallery", { deviceId, imagePath });
   }
 
   /** `POST /api/v1/wallpaper/set-lock` (spec §17) */

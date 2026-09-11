@@ -54,3 +54,13 @@ desktop.ini
 .idea/
 *.swp
 *~
+
+# ---------- HarmonyOS helper ----------
+apps/harmony-helper/.hvigor/
+apps/harmony-helper/oh_modules/
+apps/harmony-helper/build/
+apps/harmony-helper/entry/build/
+apps/harmony-helper/entry/oh_modules/
+apps/harmony-helper/local.properties
+apps/harmony-helper/.cxx/
+apps/harmony-helper/*.hap

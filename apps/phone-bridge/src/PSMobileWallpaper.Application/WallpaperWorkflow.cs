@@ -94,36 +94,26 @@ public sealed class WallpaperWorkflow
         }
     }
 
-    /// <summary>Spec §21 <c>/wallpaper/send</c>: pushes an already-prepared image to the device gallery.</summary>
-    public async Task<WallpaperResult> SendAsync(
+    /// <summary>
+    /// Spec §21 <c>/wallpaper/save-to-gallery</c>: copies an image into the phone's gallery.
+    ///
+    /// This is the step that works everywhere. On devices whose lock screen cannot be set by an app
+    /// (every device tested so far), it is the whole deliverable — the user then picks "set as
+    /// wallpaper" from the gallery, which needs no special permission.
+    /// </summary>
+    public Task<WallpaperResult> SaveToGalleryAsync(
         string deviceId,
         string imagePath,
-        CancellationToken cancellationToken = default)
-    {
-        var device = await _deviceManager.GetDeviceAsync(deviceId, cancellationToken).ConfigureAwait(false);
-        if (device is null)
-        {
-            return WallpaperResult.Fail(deviceId, ErrorCodes.DeviceNotFound, $"Device '{deviceId}' was not found.");
-        }
+        CancellationToken cancellationToken = default) =>
+        ApplyAsync(deviceId, imagePath, (device, path) =>
+            _wallpaperService.SaveToGalleryAsync(device, path, cancellationToken), cancellationToken);
 
-        var capabilities = await _wallpaperService
-            .GetCapabilitiesAsync(device, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!capabilities.CanSaveToGallery)
-        {
-            return WallpaperResult.Fail(
-                deviceId,
-                ErrorCodes.WallpaperNotSupported,
-                $"Sending to the gallery is not supported for {device.DisplayName}.");
-        }
-
-        // SetLock is the closest existing operation that performs a gallery save; providers that
-        // cannot set the lock screen still complete the gallery half and report the rest as unsupported.
-        return await _wallpaperService
-            .SetLockWallpaperAsync(device, imagePath, cancellationToken)
-            .ConfigureAwait(false);
-    }
+    /// <summary>Spec §21 <c>/wallpaper/send</c>: pushes an already-prepared image to the device gallery.</summary>
+    public Task<WallpaperResult> SendAsync(
+        string deviceId,
+        string imagePath,
+        CancellationToken cancellationToken = default) =>
+        SaveToGalleryAsync(deviceId, imagePath, cancellationToken);
 
     public Task<WallpaperResult> SetLockAsync(string deviceId, string imagePath, CancellationToken cancellationToken = default) =>
         ApplyAsync(deviceId, imagePath, (device, path) =>

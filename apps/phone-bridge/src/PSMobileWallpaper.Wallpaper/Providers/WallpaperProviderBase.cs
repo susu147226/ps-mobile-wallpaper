@@ -66,7 +66,7 @@ public abstract class WallpaperProviderBase : Abstractions.IWallpaperProvider
         SaveToGalleryAsync(device, transport, imagePath, cancellationToken);
 
     /// <summary>Copies the image into the device gallery and asks the media scanner to index it (spec §20).</summary>
-    protected async Task<WallpaperResult> SaveToGalleryAsync(
+    protected virtual async Task<WallpaperResult> SaveToGalleryAsync(
         DeviceInfo device,
         IDeviceTransport transport,
         string imagePath,

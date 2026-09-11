@@ -19,6 +19,7 @@ public static class WallpaperEndpoints
             PrepareWallpaperRequest request,
             WallpaperWorkflow workflow,
             EventBroadcaster broadcaster,
+            PreparedImageStore preparedImages,
             IOptions<ImageOptions> imageOptions,
             CancellationToken cancellationToken) =>
         {
@@ -41,6 +42,12 @@ public static class WallpaperEndpoints
                     ApiError.From(prepared.ErrorCode ?? ErrorCodes.ImageProcessFailed, prepared.Message));
             }
 
+            // Keep it so a phone-side helper can download it over the reverse port forward.
+            if (!string.IsNullOrEmpty(prepared.ImagePath))
+            {
+                preparedImages.Set(prepared.ImagePath);
+            }
+
             await broadcaster.PublishAsync(
                 EventBroadcaster.Create(
                     BridgeEventNames.TransferCompleted,
@@ -50,13 +57,36 @@ public static class WallpaperEndpoints
             return Results.Ok(prepared);
         });
 
+        // Served for the phone-side helper app. On both tested platforms the bridge cannot place a
+        // file into the gallery itself, so the app downloads the bytes and the user saves them.
+        group.MapGet("/latest-image", (PreparedImageStore preparedImages) =>
+        {
+            var path = preparedImages.Get();
+
+            return path is null
+                ? Results.NotFound(ApiError.From(
+                    ErrorCodes.ImageNotFound,
+                    "No wallpaper has been prepared yet. Run 'preview crop' in the panel first."))
+                : Results.File(path, contentType: "image/png");
+        });
+
+        group.MapPost("/save-to-gallery", (
+            SendWallpaperRequest request,
+            WallpaperWorkflow workflow,
+            CancellationToken cancellationToken) =>
+            RunAsync(
+                request.DeviceId,
+                "gallery",
+                ct => workflow.SaveToGalleryAsync(request.DeviceId, request.ImagePath, ct),
+                cancellationToken));
+
         group.MapPost("/send", (
             SendWallpaperRequest request,
             WallpaperWorkflow workflow,
             CancellationToken cancellationToken) =>
             RunAsync(
                 request.DeviceId,
-                "send",
+                "gallery",
                 ct => workflow.SendAsync(request.DeviceId, request.ImagePath, ct),
                 cancellationToken));
 
