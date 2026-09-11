@@ -29,32 +29,20 @@ export class BridgeError extends Error {
 export interface BridgeClientOptions {
   baseUrl?: string;
   webSocketUrl?: string;
-  /** Spec §23 local authentication token. */
-  token?: string;
 }
 
 /**
  * Talks to PhoneBridge over loopback. All bridge access goes through this class so the REST shape
- * and the auth header live in exactly one place.
+ * lives in exactly one place.
  */
 export class BridgeClient {
   private baseUrl: string;
   private webSocketUrl: string;
-  private token: string;
   private socket: WebSocket | null = null;
 
   constructor(options: BridgeClientOptions = {}) {
     this.baseUrl = options.baseUrl ?? DEFAULT_BRIDGE_HTTP;
     this.webSocketUrl = options.webSocketUrl ?? DEFAULT_BRIDGE_WS;
-    this.token = options.token ?? "";
-  }
-
-  public setToken(token: string): void {
-    this.token = token.trim();
-  }
-
-  public getToken(): string {
-    return this.token;
   }
 
   /** `GET /health` — used to detect whether the bridge is running before doing anything else. */
@@ -130,12 +118,7 @@ export class BridgeClient {
   ): () => void {
     this.disconnectEvents();
 
-    // Browsers and UXP cannot set headers on a WebSocket handshake, so the token rides in the query.
-    const url = this.token
-      ? `${this.webSocketUrl}?token=${encodeURIComponent(this.token)}`
-      : this.webSocketUrl;
-
-    const socket = new WebSocket(url);
+    const socket = new WebSocket(this.webSocketUrl);
     this.socket = socket;
 
     socket.onopen = () => onStatusChange?.(true);
@@ -168,9 +151,6 @@ export class BridgeClient {
     if (body !== undefined) {
       headers["Content-Type"] = "application/json";
     }
-    if (this.token) {
-      headers["X-PSMW-Token"] = this.token;
-    }
 
     let response: Response;
     try {
@@ -195,14 +175,6 @@ export class BridgeClient {
   }
 
   private async toError(response: Response): Promise<BridgeError> {
-    if (response.status === 401) {
-      return new BridgeError(
-        "PERMISSION_DENIED",
-        "本地认证失败。请在下方填入 PhoneBridge 的 auth.token（位于 %AppData%\\PSMobileWallpaper\\auth.token）。",
-        401
-      );
-    }
-
     try {
       const payload = (await response.json()) as ApiError;
 

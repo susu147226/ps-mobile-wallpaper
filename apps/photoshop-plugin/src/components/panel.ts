@@ -1,11 +1,5 @@
-import os from "os";
-import { storage } from "uxp";
 import { BridgeClient, BridgeError } from "../api/bridgeClient";
 
-/**
- * UXP surfaces these in Photoshop's UXPLogs file, which is the only way to diagnose the panel —
- * it has no visible console. Everything the panel decides should be traceable from there.
- */
 /**
  * UXP surfaces these in Photoshop's UXPLogs file, which is the only way to diagnose the panel —
  * it has no visible console. Everything the panel decides should be traceable from there.
@@ -38,9 +32,6 @@ function selectedValue(select: HTMLSelectElement, fallback: string): string {
   return fallback;
 }
 
-/** UXP's file type; named separately so it is not confused with the DOM `File`. */
-type UxpFile = Awaited<ReturnType<typeof storage.localFileSystem.getFileForOpening>>;
-
 import type {
   BridgeEvent,
   CropMode,
@@ -64,11 +55,6 @@ const CROP_MODE_LABELS: Record<CropMode, string> = {
   "bottom-crop": "底部裁剪",
 };
 
-/**
- * Where the auth token is remembered between panel opens. UXP plugins get their own localStorage,
- * so the user only has to supply the token once instead of after every Photoshop restart.
- */
-const TOKEN_STORAGE_KEY = "psmw.authToken";
 
 /** Spec §32: which dot colour each state gets. */
 const STATE_DOT_CLASS: Record<DeviceState, string> = {
@@ -101,8 +87,6 @@ export class PanelController {
     canvasMeta: HTMLElement;
     cropMode: HTMLSelectElement;
     outputFormat: HTMLSelectElement;
-    tokenInput: HTMLInputElement;
-    tokenPick: HTMLButtonElement;
     refresh: HTMLButtonElement;
     preview: HTMLButtonElement;
     send: HTMLButtonElement;
@@ -124,8 +108,6 @@ export class PanelController {
       canvasMeta: requireElement("canvas-meta"),
       cropMode: requireElement<HTMLSelectElement>("crop-mode"),
       outputFormat: requireElement<HTMLSelectElement>("output-format"),
-      tokenInput: requireElement<HTMLInputElement>("token-input"),
-      tokenPick: requireElement<HTMLButtonElement>("token-pick"),
       refresh: requireElement<HTMLButtonElement>("btn-refresh"),
       preview: requireElement<HTMLButtonElement>("btn-preview"),
       send: requireElement<HTMLButtonElement>("btn-send"),
@@ -139,11 +121,10 @@ export class PanelController {
 
   public async start(): Promise<void> {
     this.bindEvents();
-    this.restoreToken();
     this.updateCanvasInfo();
     this.updateActionAvailability();
 
-    log("panel started; token set:", this.client.getToken().length > 0);
+    log("panel started");
 
     const healthy = await this.client.checkHealth();
     log("bridge /health reachable:", healthy);
@@ -158,6 +139,7 @@ export class PanelController {
     }
 
     this.setMessage("已连接 PhoneBridge。", "ok");
+
     await this.refreshDevices();
     this.connectEvents();
   }
@@ -175,21 +157,6 @@ export class PanelController {
       this.updateSelectedDevice();
       this.updateActionAvailability();
       void this.refreshCapabilities();
-    });
-
-    this.elements.tokenInput.addEventListener("change", () => {
-      this.client.setToken(this.elements.tokenInput.value);
-      this.persistToken(this.client.getToken());
-      log("token applied; length:", this.client.getToken().length);
-
-      this.setMessage(
-        this.client.getToken() ? "已应用本地认证 Token。" : "已清空本地认证 Token。",
-        "info"
-      );
-    });
-
-    this.elements.tokenPick.addEventListener("click", () => {
-      void this.pickTokenFile();
     });
 
     this.elements.refresh.addEventListener("click", () => void this.guard(() => this.refreshDevices(true)));
@@ -528,81 +495,6 @@ export class PanelController {
 
       default:
         break;
-    }
-  }
-
-  /**
-   * Remembers the token so the user does not have to paste it after every Photoshop restart.
-   * The value stays local to the plugin's own storage; nothing is sent anywhere.
-   */
-  private persistToken(token: string): void {
-    try {
-      if (token) {
-        localStorage.setItem(TOKEN_STORAGE_KEY, token);
-      } else {
-        localStorage.removeItem(TOKEN_STORAGE_KEY);
-      }
-    } catch (error) {
-      log("could not persist token:", String(error));
-    }
-  }
-
-  private restoreToken(): void {
-    try {
-      const saved = localStorage.getItem(TOKEN_STORAGE_KEY);
-      if (saved) {
-        this.client.setToken(saved);
-        this.elements.tokenInput.value = saved;
-      }
-    } catch (error) {
-      log("could not restore token:", String(error));
-    }
-  }
-
-  /**
-   * Reads the token file the user picks. UXP cannot reach %AppData% itself, so the user has to
-   * choose the file once; the picker is pointed at the bridge's folder to make that easy.
-   */
-  private async pickTokenFile(): Promise<void> {
-    try {
-      const file = await this.openTokenFile();
-      if (!file) {
-        return;
-      }
-
-      const token = String(await file.read()).trim();
-      log("token file picked; length:", token.length);
-
-      if (token) {
-        this.elements.tokenInput.value = token;
-        this.client.setToken(token);
-        this.persistToken(token);
-        this.setMessage("已从文件读取并应用 Token。", "ok");
-      }
-    } catch (error) {
-      log("token file pick failed:", String(error));
-      this.setMessage(
-        "无法读取 Token 文件。请手动打开 %AppData%\\PSMobileWallpaper\\auth.token 并粘贴其内容。",
-        "error"
-      );
-    }
-  }
-
-  /**
-   * `initialLocation` must be an Entry or a file URL — passing a plain Windows path throws
-   * "initialLocation must be an Entry or a file URL". The hint is only a convenience, so a
-   * rejection falls back to the default location rather than failing the whole action.
-   */
-  private async openTokenFile(): Promise<UxpFile | null> {
-    const folder = `${os.homedir().replace(/\\/g, "/")}/AppData/Roaming/PSMobileWallpaper`;
-
-    try {
-      return await storage.localFileSystem.getFileForOpening({
-        initialLocation: `file:///${folder}`,
-      } as never);
-    } catch (error) {
-      log("initialLocation rejected, retrying without it:", String(error));
-      return await storage.localFileSystem.getFileForOpening({} as never);
     }
   }
 

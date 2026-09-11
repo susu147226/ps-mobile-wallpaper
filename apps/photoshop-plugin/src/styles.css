@@ -153,10 +153,6 @@ body {
   font-weight: 600;
 }
 
-.button--quiet {
-  padding: 4px 8px;
-  font-size: 10px;
-}
 
 .progress {
   display: flex;

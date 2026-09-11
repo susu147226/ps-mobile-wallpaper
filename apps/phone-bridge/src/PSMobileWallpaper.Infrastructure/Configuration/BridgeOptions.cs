@@ -10,6 +10,16 @@ public sealed class ServerOptions
 
     public int Port { get; set; } = 18765;
 
+    /// <summary>
+    /// Spec §23 asks for a local authentication token. It is optional here in practice because UXP
+    /// plugins cannot read %AppData% themselves — the user would have to hand-copy the token after
+    /// every reinstall, and a stale copy is indistinguishable from a missing one.
+    ///
+    /// Default is off, so the panel works out of the box. Turn it on for the spec-compliant
+    /// behaviour: every request then needs the X-PSMW-Token header (or ?token= for WebSocket).
+    /// </summary>
+    public bool RequireToken { get; set; }
+
     /// <summary>Rejects any configured host that is not a loopback address.</summary>
     public bool IsLoopbackOnly =>
         Host is "127.0.0.1" or "localhost" or "::1" or "[::1]";

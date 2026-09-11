@@ -1,30 +1,36 @@
+using Microsoft.Extensions.Options;
 using PSMobileWallpaper.Api.Contracts;
 using PSMobileWallpaper.Domain.Errors;
+using PSMobileWallpaper.Infrastructure.Configuration;
 using PSMobileWallpaper.Infrastructure.Security;
 
 namespace PSMobileWallpaper.Api.Security;
 
 /// <summary>
-/// Spec §23. Rejects any request that does not carry the per-install token. The token is accepted
-/// from the <c>X-PSMW-Token</c> header, or from a <c>?token=</c> query parameter because browser
-/// and UXP WebSocket clients cannot set request headers.
+/// Spec §23 describes a local authentication token, gated here behind
+/// <see cref="ServerOptions.RequireToken"/> (default off).
+///
+/// It is optional because UXP plugins cannot read %AppData%: the user would have to hand-copy the
+/// token after every reinstall, and a stale copy looks exactly like a missing one. With the token
+/// disabled the only barrier is the loopback-only binding below, so anything running as this user —
+/// including a web page in this machine's browser — can drive the bridge.
 ///
 /// Also answers CORS preflights. That is not optional: the token travels in a custom header, which
-/// makes every plugin request a "non-simple" CORS request that the runtime prefights with an
-/// OPTIONS call. A preflight never carries the token by design, so requiring one there rejected the
-/// preflight and the real request was never sent — the plugin saw PERMISSION_DENIED while curl
-/// against the same endpoint succeeded.
+/// makes each request a "non-simple" CORS request that the runtime prefights with an OPTIONS call.
 /// </summary>
 public sealed class LocalAuthMiddleware
 {
-    /// <summary>Health and liveness probes stay unauthenticated so the plugin can detect the bridge before it has the token.</summary>
+    /// <summary>Health and liveness probes stay unauthenticated so a client can detect the bridge before it has the token.</summary>
     private static readonly string[] AnonymousPaths = ["/health"];
 
     private readonly RequestDelegate _next;
 
     public LocalAuthMiddleware(RequestDelegate next) => _next = next;
 
-    public async Task InvokeAsync(HttpContext context, ILocalAuthTokenProvider tokens)
+    public async Task InvokeAsync(
+        HttpContext context,
+        ILocalAuthTokenProvider tokens,
+        IOptions<ServerOptions> options)
     {
         ApplyCorsHeaders(context);
 
@@ -36,9 +42,8 @@ public sealed class LocalAuthMiddleware
             return;
         }
 
-        var path = context.Request.Path;
-
-        if (AnonymousPaths.Any(candidate => path.Equals(candidate, StringComparison.OrdinalIgnoreCase)))
+        if (!options.Value.RequireToken ||
+            AnonymousPaths.Any(candidate => context.Request.Path.Equals(candidate, StringComparison.OrdinalIgnoreCase)))
         {
             await _next(context).ConfigureAwait(false);
             return;
@@ -65,9 +70,8 @@ public sealed class LocalAuthMiddleware
     }
 
     /// <summary>
-    /// Echoes the caller's origin back. The bridge is loopback-only and every action needs the token,
-    /// so the origin is not what protects it — the token is. Without these headers the plugin cannot
-    /// read any response at all.
+    /// Echoes the caller's origin back. The bridge is loopback-only, so the origin is not what
+    /// protects it; without these headers the plugin cannot read any response at all.
     /// </summary>
     private static void ApplyCorsHeaders(HttpContext context)
     {

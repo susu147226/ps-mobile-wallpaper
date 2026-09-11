@@ -37,7 +37,7 @@ public static class BridgeConfiguration
 
         var defaults = new
         {
-            server = new { host = "127.0.0.1", port = 18765 },
+            server = new { host = "127.0.0.1", port = 18765, requireToken = false },
             adb = new { enabled = true, path = string.Empty },
             hdc = new { enabled = true, path = string.Empty },
             image = new { format = "png", cropMode = "center-crop", quality = 95 },
