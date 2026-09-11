@@ -61,6 +61,14 @@ Bridge 用 `run-as` 读回：
 5. **必须 `android:debuggable="true"`**，否则 Bridge 无法用 `run-as` 读回结果。
    该 APK 仅侧载分发、不进入 Play，见 AndroidManifest.xml 中的说明。
 
+6. **锁屏设置在这台 EMUI 设备上无效 —— 而且是"假成功"**。
+   `setStream(..., FLAG_LOCK)` 返回成功，`dumpsys wallpaper` 里 Lock 壁纸 id 也确实变了，
+   但锁屏**实际没有任何变化**。原因是 EMUI 用自己的主题引擎渲染锁屏壁纸，其 provider 受
+   `com.huawei.android.thememanager.permission.THEME_PROVIDER_ACCESS`（signature 级）保护。
+
+   **教训：判断壁纸是否设置成功，必须看屏幕，不能看 API 返回值或 dumpsys。**
+   Bridge 因此把 `canSetLock` 固定为 `false` 并拒绝该操作，避免误导。
+
 ## 构建
 
 ```bash

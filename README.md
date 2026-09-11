@@ -196,27 +196,39 @@ center-fit 必须留边、其余模式必须铺满、三种纵向锚定的取样
 注意：当源图**宽于**目标时，裁剪会保留全高、只裁左右，此时 `center-crop`、`top-crop`、
 `bottom-crop` 在数学上等价 —— 纵向锚定只有在源图相对更高时才有区别。
 
-**Phase 9 / 10（Android 壁纸设置）— 已在真机验证**
+**Phase 9 / 10（Android 壁纸设置）— 真机验证，结论是"只支持主屏"**
 
-用 Huawei JAD-AL80（Android 12 / EMUI）实测通过，锁屏、主屏、同时设置三种目标均实际生效
-（`dumpsys wallpaper` 确认 System / Lock 壁纸 id 都更新了）。
+用 Huawei JAD-AL80（Android 12 / EMUI）实测：
 
-实现方式：本仓库附带一个 helper APK（`apps/wallpaper-helper`），通过**官方 WallpaperManager
-API** 代为设置壁纸。
+| 目标 | 结果 |
+|---|---|
+| 主屏（`FLAG_SYSTEM`） | ✅ **实际生效**（满屏纯色测试，肉眼确认） |
+| 锁屏（`FLAG_LOCK`） | ❌ **无效** |
 
-为什么必须这样做 —— `adb shell` 本身做不到：
+**为什么锁屏无效** —— 这里有两条容易被误导的"假阳性"证据，必须警惕：
 
-- `cmd wallpaper` 在这些机型上返回 `No shell command implementation.`
-- `com.android.shell` 虽然持有 `SET_WALLPAPER` 权限，但没有任何命令行出口去使用它
+1. helper 调用 `setStream(..., FLAG_LOCK)` **返回成功**
+2. `dumpsys wallpaper` 里 **Lock 壁纸 id 确实变了**
 
-这不是破解：helper 只使用系统公开/隐藏但非特权的 API，不 root、不改系统镜像、不绕过安全检查
-（spec §42）。能力声明由**实测**决定：helper 未安装时只报相册保存，安装后才报锁屏/主屏支持。
+但锁屏实际**没有任何变化**。EMUI 的锁屏壁纸由华为主题引擎渲染，其 provider 受
+`com.huawei.android.thememanager.permission.THEME_PROVIDER_ACCESS` 这个 **signature 级权限**
+保护，第三方应用无法获得。
 
-**尚未完成**
+因此 `canSetLock` 被设为 `false`，设置锁屏会返回 `WALLPAPER_NOT_SUPPORTED` 并说明原因。
+**判断能力必须以屏幕上的实际效果为准，不能以 API 返回值或 dumpsys 为准**（spec §40）。
 
-- Phase 6：插件已在 Photoshop 2025 中**确认加载成功**（见下），但面板功尚未逐项验证
-- **HarmonyOS 的锁屏设置未实现**：其 `WallpaperManagerService` 经 hidumper 不暴露任何接口，
-  目前仍返回 `WALLPAPER_NOT_SUPPORTED`
+实现方式：本仓库附带 helper APK（`apps/wallpaper-helper`），通过官方 WallpaperManager API
+代为设置。为什么必须这样做 —— `adb shell` 本身做不到：`cmd wallpaper` 在这些机型上返回
+`No shell command implementation`，shell 用户虽持 `SET_WALLPAPER` 权限却无命令行出口。
+
+这不是破解：不 root、不改系统镜像、不绕过安全检查（spec §42）。
+
+## 还没做到
+
+- **HarmonyOS 锁屏/主屏设置**：其 `WallpaperManagerService` 经 hidumper 不暴露任何接口，
+  目前全部返回 `WALLPAPER_NOT_SUPPORTED`，只有相册保存可用。
+- **其他 Android 品牌的锁屏**：未验证。按 §40 一律报 `canSetLock: false`，验证通过后才放开。
+- **主屏设置在非华为设备上**未验证（用的是公开 API，风险较低，但仍是未验证）。
 
 ## 在 Photoshop 中加载插件
 
@@ -253,7 +265,7 @@ dotnet test tests/integration/PSMobileWallpaper.IntegrationTests/PSMobileWallpap
 # 端到端（需先启动 Bridge）
 python scripts/phase5-e2e-check.py    # 设备识别 + WS 事件 + 裁剪
 python scripts/crop-modes-check.py    # §11 全部裁剪模式的像素级验证
-python scripts/wallpaper-check.py lock|home|both   # §17 壁纸设置（走 helper APK）
+python scripts/wallpaper-check.py   # §17 壁纸设置：主屏生效、锁屏如实拒绝
 ```
 
 ## 重要说明

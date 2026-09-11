@@ -52,6 +52,22 @@ public abstract class AndroidHelperWallpaperProviderBase : WallpaperProviderBase
     /// <summary>Absolute path to the helper APK shipped alongside the bridge. Empty when unavailable.</summary>
     protected string HelperApkPath { get; }
 
+    /// <summary>
+    /// Whether the LOCK screen can actually be set on this device.
+    ///
+    /// Verified FALSE on Huawei EMUI (JAD-AL80, Android 12): the helper's
+    /// setStream(..., FLAG_LOCK) call reports success, the AOSP wallpaper service even records a new
+    /// lock-wallpaper id in `dumpsys wallpaper`, and the lock screen still does not change. EMUI
+    /// renders its lock wallpaper from its own theme engine, behind the signature-level permission
+    /// com.huawei.android.thememanager.permission.THEME_PROVIDER_ACCESS, which a third-party app
+    /// cannot hold.
+    ///
+    /// Do not flip this to true on the strength of the API returning success, or of dumpsys showing
+    /// a lock id: neither reflects what the device actually displays. It needs a visual check on the
+    /// lock screen itself (spec §40).
+    /// </summary>
+    protected virtual bool LockScreenIsSettable => false;
+
     public override async Task<WallpaperCapabilities> GetCapabilitiesAsync(
         DeviceInfo device,
         IDeviceTransport transport,
@@ -59,12 +75,16 @@ public abstract class AndroidHelperWallpaperProviderBase : WallpaperProviderBase
     {
         var helperInstalled = await IsHelperInstalledAsync(device, transport, cancellationToken).ConfigureAwait(false);
 
+        // The home screen uses the public setStream overload and is confirmed working; the lock
+        // screen depends on the OEM honouring FLAG_LOCK, which EMUI does not.
+        var canSetHome = helperInstalled;
+        var canSetLock = helperInstalled && LockScreenIsSettable;
+
         return new WallpaperCapabilities
         {
-            // Only claim the wallpaper screens when the helper that performs them is present.
-            CanSetLock = helperInstalled,
-            CanSetHome = helperInstalled,
-            CanSetBoth = helperInstalled,
+            CanSetLock = canSetLock,
+            CanSetHome = canSetHome,
+            CanSetBoth = canSetHome && canSetLock,
             CanSaveToGallery = true,
             RequiresUserConfirmation = !helperInstalled,
         };
@@ -75,7 +95,9 @@ public abstract class AndroidHelperWallpaperProviderBase : WallpaperProviderBase
         IDeviceTransport transport,
         string imagePath,
         CancellationToken cancellationToken = default) =>
-        ApplyAsync(device, transport, imagePath, "lock", cancellationToken);
+        LockScreenIsSettable
+            ? ApplyAsync(device, transport, imagePath, "lock", cancellationToken)
+            : RefuseLockAsync(device);
 
     public override Task<WallpaperResult> SetHomeAsync(
         DeviceInfo device,
@@ -89,7 +111,26 @@ public abstract class AndroidHelperWallpaperProviderBase : WallpaperProviderBase
         IDeviceTransport transport,
         string imagePath,
         CancellationToken cancellationToken = default) =>
-        ApplyAsync(device, transport, imagePath, "both", cancellationToken);
+        LockScreenIsSettable
+            ? ApplyAsync(device, transport, imagePath, "both", cancellationToken)
+            : RefuseLockAsync(device);
+
+    /// <summary>
+    /// Refuse rather than attempt: the helper would report success while the lock screen stayed
+    /// unchanged, which is exactly the false positive spec §40 forbids.
+    /// </summary>
+    private Task<WallpaperResult> RefuseLockAsync(DeviceInfo device)
+    {
+        Logger.LogInformation(
+            "Refusing to set the lock wallpaper on {DeviceId}: this OEM does not honour FLAG_LOCK.",
+            device.Id);
+
+        return Task.FromResult(WallpaperResult.Fail(
+            device.Id,
+            ErrorCodes.WallpaperNotSupported,
+            $"{device.DisplayName} does not let third-party apps change the lock-screen wallpaper. " +
+            "The home-screen wallpaper is supported."));
+    }
 
     /// <summary>True when the helper package is present on the device.</summary>
     protected async Task<bool> IsHelperInstalledAsync(

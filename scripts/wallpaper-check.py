@@ -1,9 +1,12 @@
-"""Phase 9 end-to-end check: set a phone wallpaper through the bridge and the helper app.
+"""Phase 9 end-to-end check: wallpaper support matches what the device actually does.
 
-Drives the real REST API against a live bridge, so it exercises the whole chain:
-prepare (crop) -> helper app on the device -> WallpaperManager.
+Drives the real REST API against a live bridge and asserts the honest behaviour:
 
-Usage:  python scripts/wallpaper-check.py [lock|home|both]
+  * the home screen is set (verified working through the helper app)
+  * the lock screen is *refused* with WALLPAPER_NOT_SUPPORTED, because EMUI ignores FLAG_LOCK —
+    the helper reports success and dumpsys records an id, but the lock screen never changes
+
+Usage:  python scripts/wallpaper-check.py
 """
 
 import json
@@ -57,7 +60,6 @@ def write_gradient_png(path, width, height):
 
 
 def main():
-    target = (sys.argv[1] if len(sys.argv) > 1 else "lock").lower()
     failures = []
 
     with open(TOKEN_PATH, "r", encoding="utf-8") as handle:
@@ -82,10 +84,14 @@ def main():
     capabilities = api("GET", f"/devices/{device_id}/capabilities", token)
     print(f"capabilities: {json.dumps(capabilities, ensure_ascii=False)}")
 
-    if not capabilities.get("canSetLock"):
-        failures.append("canSetLock is false but the helper is installed on this device")
     if not capabilities.get("canSetHome"):
         failures.append("canSetHome is false but the helper is installed on this device")
+
+    # The lock screen is NOT expected to work on EMUI. The helper reports success and dumpsys even
+    # records a lock wallpaper id, but the lock screen never changes. Claiming support would be the
+    # false positive spec §40 forbids, so the bridge must refuse instead.
+    lock_settable = bool(capabilities.get("canSetLock"))
+    print(f"lock screen settable: {lock_settable}")
 
     os.makedirs(TEMP_WORKSPACE, exist_ok=True)
     source = os.path.join(TEMP_WORKSPACE, "wallpaper-check-source.png")
@@ -103,12 +109,28 @@ def main():
             print(f"  - {failure}")
         return 1
 
-    result = api("POST", f"/wallpaper/set-{target}", token,
-                 {"deviceId": device_id, "imagePath": prepared["imagePath"]})
-    print(f"set-{target}: {json.dumps(result, ensure_ascii=False)}")
+    # Home must work and must be reported as working.
+    home = api("POST", "/wallpaper/set-home", token,
+               {"deviceId": device_id, "imagePath": prepared["imagePath"]})
+    print(f"set-home: {json.dumps(home, ensure_ascii=False)}")
 
-    if not result.get("success"):
-        failures.append(f"set-{target} failed: {result.get('message')} [{result.get('errorCode')}]")
+    if not home.get("success"):
+        failures.append(f"set-home failed: {home.get('message')} [{home.get('errorCode')}]")
+
+    # Lock must behave exactly as advertised: succeed only when the capability says it can.
+    try:
+        lock = api("POST", "/wallpaper/set-lock", token,
+                   {"deviceId": device_id, "imagePath": prepared["imagePath"]})
+        print(f"set-lock: {json.dumps(lock, ensure_ascii=False)}")
+
+        if not lock_settable:
+            failures.append(
+                "canSetLock is false but set-lock reported success — that is a false positive")
+    except RuntimeError as error:
+        print(f"set-lock: refused ({error})")
+
+        if lock_settable:
+            failures.append(f"canSetLock is true but set-lock was refused: {error}")
 
     print()
     if failures:
@@ -117,7 +139,7 @@ def main():
             print(f"  - {failure}")
         return 1
 
-    print(f"PASSED - the {target} wallpaper was applied through the helper app")
+    print("PASSED - capabilities match reality (home works; lock honestly reported as unsupported)")
     return 0
 
 
