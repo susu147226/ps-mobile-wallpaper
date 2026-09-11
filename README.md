@@ -55,6 +55,29 @@ dotnet run --project apps/phone-bridge/src/PSMobileWallpaper.Api
 cd apps/photoshop-plugin && npm install && npm run build
 ```
 
+## 安装
+
+发布产物在 `artifacts/`（由 `scripts/build-installer.ps1` 生成）：
+
+| 文件 | 说明 |
+|---|---|
+| `PSMobileWallpaper-PhoneBridge-<ver>-x64.msi` | 安装程序。装到 `%ProgramFiles%\PS Mobile Wallpaper\`，含开始菜单与桌面快捷方式 |
+| `PSMobileWallpaper-PhoneBridge-<ver>-x64.zip` | 免安装版，解压即用 |
+| `PSMobileWallpaper-Plugin-<ver>.zip` | Photoshop UXP 面板 |
+
+可执行文件是**自包含**的：目标机器**不需要 .NET 运行时，也不需要 Adobe 账号**。
+
+```powershell
+# 构建全部产物
+powershell -ExecutionPolicy Bypass -File scripts/build-installer.ps1 -Version 1.0.0
+```
+
+### 为什么不做成 Windows 服务
+
+Bridge 的配置与认证令牌按 §2.7 / §23 存放在**用户**的 `%AppData%\PSMobileWallpaper\`。
+以 `LocalSystem` 运行的服务看不到这个目录，插件申请的令牌会失效。因此安装包只创建快捷方式，
+开机自启由用户自行添加（把快捷方式放进 `shell:startup`）。
+
 ## 配置
 
 首次运行会在 `%AppData%\PSMobileWallpaper\` 生成：
