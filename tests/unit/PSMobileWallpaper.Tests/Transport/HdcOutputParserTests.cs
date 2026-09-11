@@ -82,6 +82,62 @@ public sealed class HdcOutputParserTests
     }
 
     [Fact]
+    public void ParseScreenSize_ReadsTheRealHidumperDump()
+    {
+        // Verbatim excerpt from `hdc shell hidumper -s RenderService -a screen` on a HarmonyOS handset.
+        const string output = """
+            ----------------------------------RenderService----------------------------------
+            -- ScreenInfo
+            screen[0]: id=0, powerStatus=POWER_STATUS_ON, backlight=16920, screenType=EXTERNAL_TYPE, render resolution=1152x2520, physical resolution=1280x2800, isVirtual=false, skipFrameInterval=1, expectedRefreshRate=-1, skipFrameStrategy=0
+            supportedMode[0]: 1280x2800, refreshRate=60
+            supportedMode[1]: 1280x2800, refreshRate=90
+            supportedMode[2]: 1280x2800, refreshRate=120
+            activeMode: 1280x2800, refreshRate=60
+            name=, phyWidth=74, phyHeight=158, supportLayers=12, virtualDispCount=0, propertyCount=3, type=DISP_INTF_UNKNOW, supportWriteBack=false
+            """;
+
+        var (width, height) = HdcOutputParser.ParseScreenSize(output);
+
+        // Physical panel size wins over the lower render resolution.
+        Assert.Equal(1280, width);
+        Assert.Equal(2800, height);
+    }
+
+    [Fact]
+    public void ParseScreenSize_FallsBackToRenderResolutionWhenPhysicalIsAbsent()
+    {
+        const string output = "screen[0]: render resolution=1152x2520, isVirtual=false\n";
+
+        var (width, height) = HdcOutputParser.ParseScreenSize(output);
+
+        Assert.Equal(1152, width);
+        Assert.Equal(2520, height);
+    }
+
+    [Fact]
+    public void ParseScreenSize_FallsBackToActiveModeWhenNoResolutionFieldsExist()
+    {
+        const string output = "activeMode: 1220x2700, refreshRate=90\n";
+
+        var (width, height) = HdcOutputParser.ParseScreenSize(output);
+
+        Assert.Equal(1220, width);
+        Assert.Equal(2700, height);
+    }
+
+    [Fact]
+    public void ParseScreenSize_IgnoresRefreshRatesAndOtherNumbers()
+    {
+        // refreshRate=60 and phyWidth/phyHeight must not be mistaken for a resolution.
+        const string output = "activeMode: 1280x2800, refreshRate=60\nname=, phyWidth=74, phyHeight=158\n";
+
+        var (width, height) = HdcOutputParser.ParseScreenSize(output);
+
+        Assert.Equal(1280, width);
+        Assert.Equal(2800, height);
+    }
+
+    [Fact]
     public void ParseScreenSize_ReadsActiveMode()
     {
         const string output = """
@@ -116,5 +172,50 @@ public sealed class HdcOutputParserTests
 
         Assert.Equal(0, width);
         Assert.Equal(0, height);
+    }
+
+    [Fact]
+    public void ParseDensity_ConvertsScaleFactorToAndroidDensityDpi()
+    {
+        // Verbatim excerpt from `hdc shell hidumper -s DisplayManagerService -a -a`.
+        const string output = """
+            ----------------------------------DisplayManagerService----------------------------------
+            Density:                      3.15
+            DensityInCurResolution:       3.15
+            DPI<X, Y>:                    395.416, 405.113
+            """;
+
+        // 3.15 x 160 = 504, matching the densityDpi units `adb shell wm density` reports.
+        Assert.Equal(504, HdcOutputParser.ParseDensity(output));
+    }
+
+    [Theory]
+    [InlineData("Density: 2.0", 320)]
+    [InlineData("Density: 1.5", 240)]
+    [InlineData("Density: 3", 480)]
+    [InlineData("density: 2.75", 440)]
+    public void ParseDensity_ScalesToDensityDpi(string output, int expected)
+    {
+        Assert.Equal(expected, HdcOutputParser.ParseDensity(output));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("DPI<X, Y>:  395.416, 405.113")]
+    [InlineData("Density: 0.5")]
+    [InlineData("Density: unknown")]
+    public void ParseDensity_ReturnsZeroWhenNotReported(string? output)
+    {
+        Assert.Equal(0, HdcOutputParser.ParseDensity(output));
+    }
+
+    [Fact]
+    public void ParseDensity_DoesNotConfuseDensityInCurResolution()
+    {
+        // Only the plain `Density` key is authoritative; the sibling key must not win by position.
+        const string output = "DensityInCurResolution:       9.99\nDensity:                      2.0\n";
+
+        Assert.Equal(320, HdcOutputParser.ParseDensity(output));
     }
 }

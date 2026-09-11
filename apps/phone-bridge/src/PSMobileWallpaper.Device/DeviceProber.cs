@@ -18,7 +18,7 @@ public sealed class DeviceProber
         "const.product.brand",
         "const.product.manufacturer",
         "const.product.model",
-        "const.ohos.apiversion",
+        "const.ohos.fullname",
         "const.product.software.version",
     ];
 
@@ -81,7 +81,7 @@ public sealed class DeviceProber
             }
         }
 
-        var osVersion = properties.GetValueOrDefault("const.ohos.apiversion", string.Empty);
+        var osVersion = NormalizeHarmonyVersion(properties.GetValueOrDefault("const.ohos.fullname", string.Empty));
 
         return new Abstractions.DeviceProbe
         {
@@ -90,6 +90,23 @@ public sealed class DeviceProber
             OsName = "HarmonyOS",
             OsVersion = osVersion,
         };
+    }
+
+    /// <summary>
+    /// `const.ohos.fullname` reads like "OpenHarmony-7.0.0.105"; users recognise the trailing version.
+    /// `const.ohos.apiversion` is deliberately not used — it is an API level (e.g. "26"), not an OS version.
+    /// </summary>
+    private static string NormalizeHarmonyVersion(string fullName)
+    {
+        var trimmed = fullName.Trim();
+        if (trimmed.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var dash = trimmed.LastIndexOf('-');
+
+        return dash >= 0 && dash < trimmed.Length - 1 ? trimmed[(dash + 1)..] : trimmed;
     }
 
     private static Abstractions.DeviceProbe Empty(DeviceInfo device) => new()

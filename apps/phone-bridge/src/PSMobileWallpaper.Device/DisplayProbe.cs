@@ -70,12 +70,12 @@ public sealed class DisplayProbe
 
         var (width, height) = HdcOutputParser.ParseScreenSize(screenOutput);
 
-        // HarmonyOS reports logical pixels; density is fetched separately and may be unavailable.
-        var densityOutput = await transport
-            .ShellAsync(device.Id, "hidumper -s RenderService -a screen -h", cancellationToken)
+        // RenderService (the wrong place to ask) does not expose a density; DisplayManagerService does.
+        var displayOutput = await transport
+            .ShellAsync(device.Id, "hidumper -s DisplayManagerService -a -a", cancellationToken)
             .ConfigureAwait(false);
 
-        var density = ParseDensity(densityOutput);
+        var density = HdcOutputParser.ParseDensity(displayOutput);
 
         return Build(width, height, density, 0);
     }
@@ -95,37 +95,5 @@ public sealed class DisplayProbe
             Rotation = rotation,
             Orientation = height >= width ? ScreenOrientation.Portrait : ScreenOrientation.Landscape,
         };
-    }
-
-    private static int ParseDensity(string? output)
-    {
-        if (string.IsNullOrWhiteSpace(output))
-        {
-            return 0;
-        }
-
-        foreach (var rawLine in output.Split('\n'))
-        {
-            var line = rawLine.Trim();
-            var separator = line.IndexOf(':');
-            if (separator <= 0)
-            {
-                continue;
-            }
-
-            var label = line[..separator].Trim();
-            if (!label.Contains("density", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            var digits = new string(line[(separator + 1)..].Trim().TakeWhile(char.IsDigit).ToArray());
-            if (int.TryParse(digits, out var density))
-            {
-                return density;
-            }
-        }
-
-        return 0;
     }
 }

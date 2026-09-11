@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace PSMobileWallpaper.Transport.Hdc;
 
@@ -10,6 +11,23 @@ public sealed record HdcRawTarget(string Id, string State);
 /// </summary>
 public static class HdcOutputParser
 {
+    /// <summary>
+    /// Label-anchored resolution patterns. Anchoring matters: a single RenderService line can carry
+    /// both `render resolution=1152x2520` and `physical resolution=1280x2800`, so taking the first
+    /// `WxH` on the line would pick the wrong one.
+    /// </summary>
+    private static readonly Regex PhysicalResolutionPattern = new(
+        @"physical\s+resolution\s*[=:]\s*(\d{2,5})\s*[xX]\s*(\d{2,5})",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex RenderResolutionPattern = new(
+        @"render\s+resolution\s*[=:]\s*(\d{2,5})\s*[xX]\s*(\d{2,5})",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex ActiveModePattern = new(
+        @"activeMode\s*[=:]\s*(\d{2,5})\s*[xX]\s*(\d{2,5})",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     /// <summary>
     /// Recognised connection states. `hdc list targets -v` words the column as "Ready";
     /// the plain listing omits it entirely.
@@ -84,8 +102,12 @@ public static class HdcOutputParser
     public static string ParseParamGet(string? output) => output?.Trim() ?? string.Empty;
 
     /// <summary>
-    /// Parses `hdc shell hidumper -s RenderService -a screen` for the active screen size.
-    /// HarmonyOS reports it as <c>activeMode: 1220x2700</c> inside the dump.
+    /// Parses the screen size out of `hdc shell hidumper -s RenderService -a screen`.
+    ///
+    /// A real RenderService dump reports several sizes on one line, e.g.
+    /// <c>render resolution=1152x2520, physical resolution=1280x2800, ...</c> plus a separate
+    /// <c>activeMode: 1280x2800, refreshRate=60</c>. The physical panel size is preferred because a
+    /// wallpaper at native resolution is only ever downscaled for display, never upscaled.
     /// </summary>
     public static (int Width, int Height) ParseScreenSize(string? output)
     {
@@ -94,40 +116,67 @@ public static class HdcOutputParser
             return (0, 0);
         }
 
-        foreach (var rawLine in output.Split('\n'))
+        // First match wins for each label; the dump only reports each screen once in practice.
+        var physical = MatchResolution(PhysicalResolutionPattern, output);
+        if (physical.Width > 0)
         {
-            var line = rawLine.Trim();
-
-            var separator = line.IndexOf(':');
-            if (separator <= 0)
-            {
-                continue;
-            }
-
-            var label = line[..separator].Trim();
-            if (!label.Equals("activeMode", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            var value = line[(separator + 1)..].Trim();
-
-            // Some builds append a refresh rate: "1220x2700 120".
-            var space = value.IndexOf(' ');
-            if (space > 0)
-            {
-                value = value[..space];
-            }
-
-            var parts = value.Split('x', 'X');
-            if (parts.Length == 2 &&
-                int.TryParse(parts[0].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var width) &&
-                int.TryParse(parts[1].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var height))
-            {
-                return (width, height);
-            }
+            return physical;
         }
 
-        return (0, 0);
+        var render = MatchResolution(RenderResolutionPattern, output);
+        if (render.Width > 0)
+        {
+            return render;
+        }
+
+        return MatchResolution(ActiveModePattern, output);
+    }
+
+    /// <summary>Matches the density scale factor reported by DisplayManagerService, e.g. <c>Density: 3.15</c>.</summary>
+    private static readonly Regex DensityPattern = new(
+        @"Density\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Parses the density out of `hdc shell hidumper -s DisplayManagerService -a -a` and converts it
+    /// to Android's densityDpi units (scale x 160), so <see cref="Domain.Models.DisplayInfo.Density"/>
+    /// means the same thing regardless of which transport discovered the device.
+    /// </summary>
+    /// <remarks>Returns 0 when the dump does not expose a density.</remarks>
+    public static int ParseDensity(string? output)
+    {
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            return 0;
+        }
+
+        var match = DensityPattern.Match(output);
+        if (!match.Success ||
+            !double.TryParse(match.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var scale))
+        {
+            return 0;
+        }
+
+        // A scale below 1 is not a density bucket; treat it as not-reported rather than guessing.
+        if (scale < 1d)
+        {
+            return 0;
+        }
+
+        return (int)Math.Round(scale * 160d, MidpointRounding.AwayFromZero);
+    }
+
+    /// <summary>First match of <paramref name="pattern"/> rendered as a resolution, or (0,0).</summary>
+    private static (int Width, int Height) MatchResolution(Regex pattern, string output)
+    {
+        var match = pattern.Match(output);
+        if (!match.Success)
+        {
+            return (0, 0);
+        }
+
+        return (
+            int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture),
+            int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture));
     }
 }
