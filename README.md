@@ -245,10 +245,37 @@ center-fit 必须留边、其余模式必须铺满、三种纵向锚定的取样
 
 **这不是权限或路径问题**：权限已授予、文件可读、API 报成功，而屏幕纹丝不动。
 
+### 平台的正规路径也走不通
+
+进一步查到，系统自己的壁纸能力由 `com.ohos.sceneboard` 的
+**`WallpaperServiceExtAbility`** 提供（module `themecomponent`），应用需要绑定该服务。但它要求：
+
+```
+permissions: ["ohos.permission.ACTIVATE_THEME_PACKAGE"]
+```
+
+实测把这个权限写进 manifest 后，**安装直接失败**：
+
+```
+install failed due to grant request permissions failed.
+PermissionName: ohos.permission.ACTIVATE_THEME_PACKAGE
+```
+
+即该服务受**系统级权限**保护，第三方应用无法绑定。**相册之所以能设壁纸，正因为它是有系统权限的系统应用。**
+
 > 教训（和华为 EMUI 那次一样）：**判断壁纸是否设置成功，只能看屏幕**。
 > API 返回值、dumpsys、应用日志的"成功"都不是证据。本项目因此把两种"假成功"都记在案。
 
 因此鸿蒙设备目前**只支持"保存到相册"**（已可用），壁纸设置如实返回 `WALLPAPER_NOT_SUPPORTED`。
+
+### 可行的替代：保存到相册 + 用户在相册中设置
+
+相册本身具备"设为锁屏/桌面壁纸"的功能。所以鸿蒙上可用的完整链路是：
+
+1. Bridge 把裁剪好的图片推送到设备相册（**这项已经可用**）
+2. 用户在系统相册里长按图片 → 设为壁纸
+
+这不是自动设置，但真实可用，且不需要任何系统权限。
 
 ## 还没做到
 
