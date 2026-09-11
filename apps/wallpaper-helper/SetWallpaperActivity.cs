@@ -1,7 +1,6 @@
 using Android.App;
 using Android.Content;
 using Android.OS;
-using Android.Wallpaper;
 using Java.Interop;
 using System.Text.Json;
 
@@ -27,7 +26,13 @@ public sealed class SetWallpaperActivity : Activity
 {
     internal const string ExtraImagePath = "imagePath";
     internal const string ExtraTarget = "target";
-    internal const string ExtraResultPath = "resultPath";
+
+    /// <summary>
+    /// Result file name inside the app's private files directory.
+    /// The bridge reads it with <c>run-as</c>: since Android 11 the shell cannot see
+    /// <c>/sdcard/Android/data/...</c>, and the app cannot write to <c>/data/local/tmp</c>.
+    /// </summary>
+    internal const string ResultFileName = "psmw-result.json";
 
     /// <summary>WallpaperManager.FLAG_SYSTEM — the home screen.</summary>
     private const int FlagSystem = 1;
@@ -41,24 +46,26 @@ public sealed class SetWallpaperActivity : Activity
 
         var imagePath = Intent?.GetStringExtra(ExtraImagePath);
         var target = Intent?.GetStringExtra(ExtraTarget) ?? "lock";
-        var resultPath = Intent?.GetStringExtra(ExtraResultPath);
 
         var result = Apply(imagePath, target);
-
-        if (!string.IsNullOrEmpty(resultPath))
-        {
-            try
-            {
-                File.WriteAllText(resultPath, JsonSerializer.Serialize(result));
-            }
-            catch (Exception ex)
-            {
-                // Nothing else we can do; the bridge treats a missing result file as a failure.
-                Android.Util.Log.Error("PSMW", $"Could not write result file: {ex.Message}");
-            }
-        }
+        WriteResult(result);
 
         Finish();
+    }
+
+    private void WriteResult(ApplyResult result)
+    {
+        try
+        {
+            var path = Path.Combine(FilesDir!.AbsolutePath, ResultFileName);
+            File.WriteAllText(path, JsonSerializer.Serialize(result));
+            Android.Util.Log.Info("PSMW", $"Result written to {path}");
+        }
+        catch (Exception ex)
+        {
+            // Nothing else we can do; the bridge treats a missing result file as a failure.
+            Android.Util.Log.Error("PSMW", $"Could not write result file: {ex.Message}");
+        }
     }
 
     private ApplyResult Apply(string? imagePath, string target)
@@ -137,29 +144,72 @@ public sealed class SetWallpaperActivity : Activity
     /// four-argument <c>setStream(InputStream, Rect, boolean, int)</c> is invoked through JNI.
     /// The helper targets API 27 precisely so this remains permitted (see the csproj comment).
     /// </summary>
-    private void ApplyTo(WallpaperManager manager, string imagePath, int which)
+    private unsafe void ApplyTo(WallpaperManager manager, string imagePath, int which)
     {
         using var input = new Java.IO.FileInputStream(imagePath);
 
-        var env = JNIEnv;
-        var managerClass = env.GetObjectClass(manager.Handle);
-        var methodId = env.GetMethodID(managerClass, "setStream", "(Ljava/io/InputStream;Landroid/graphics/Rect;ZI)V");
+        var instance = new JniObjectReference(manager.Handle);
+        var classRef = JniEnvironment.Types.GetObjectClass(instance);
 
-        if (methodId == IntPtr.Zero)
+        // GetMethodID throws when the member is absent, so the diagnostic has to be in the catch.
+        //
+        // Note the trailing "I": this overload returns int (the new wallpaper id), not void. It is
+        // easily mistaken for void — the reflection dump on a real device is what settled it.
+        JniMethodInfo method;
+        try
         {
+            method = JniEnvironment.InstanceMethods.GetMethodID(
+                classRef,
+                "setStream",
+                "(Ljava/io/InputStream;Landroid/graphics/Rect;ZI)I");
+        }
+        catch (Exception ex)
+        {
+            // Do not guess at the signature: report what this Android build actually exposes.
             throw new InvalidOperationException(
-                "WallpaperManager.setStream(InputStream, Rect, boolean, int) is not available on this Android build.");
+                "WallpaperManager has no setStream(InputStream, Rect, boolean, int). Available: " +
+                DescribeWallpaperMethods() + $" [{ex.GetType().Name}]");
         }
 
-        var arguments = new JValue[]
-        {
-            new(input),
-            new(IntPtr.Zero),   // visibleCropHint = null
-            new(false),         // allowBackup = false
-            new(which),
-        };
+        // setStream(InputStream, Rect, boolean, int)
+        var arguments = stackalloc JniArgumentValue[4];
+        arguments[0] = new JniArgumentValue(input.Handle);
+        arguments[1] = new JniArgumentValue(IntPtr.Zero);   // visibleCropHint = null
+        arguments[2] = new JniArgumentValue(false);         // allowBackup = false
+        arguments[3] = new JniArgumentValue(which);         // FLAG_SYSTEM / FLAG_LOCK
 
-        env.CallVoidMethod(manager.Handle, methodId, arguments);
+        JniEnvironment.InstanceMethods.CallIntMethod(instance, method, arguments);
+    }
+
+    /// <summary>Lists every declared setStream/setBitmap overload, for diagnosing signature drift.</summary>
+    private static string DescribeWallpaperMethods()
+    {
+        try
+        {
+            var klass = Java.Lang.Class.FromType(typeof(WallpaperManager));
+            var described = new List<string>();
+
+            foreach (var candidate in klass.GetDeclaredMethods() ?? [])
+            {
+                var name = candidate.Name ?? string.Empty;
+                if (!name.Contains("etStream", StringComparison.Ordinal) &&
+                    !name.Contains("etBitmap", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var parameters = candidate.GetParameterTypes() ?? [];
+                var parameterNames = parameters.Select(type => type?.Name ?? "?");
+
+                described.Add($"{name}({string.Join(",", parameterNames)})->{candidate.ReturnType?.Name}");
+            }
+
+            return described.Count == 0 ? "<none found>" : string.Join(" | ", described);
+        }
+        catch (Exception ex)
+        {
+            return $"<reflection failed: {ex.Message}>";
+        }
     }
 
     private sealed record ApplyResult(bool Success, string Message, string? ErrorCode, IReadOnlyList<string> Applied)

@@ -7,6 +7,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
 
+    <!-- The hidden setStream overload is reached through the JNI pointer API, which needs stackalloc. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
     <ApplicationId>com.psmobilewallpaper.helper</ApplicationId>
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
@@ -19,6 +22,13 @@
       distributed through Play, so the older target has no practical downside.
     -->
     <TargetSdkVersion>27</TargetSdkVersion>
+
+    <!--
+      Pinned explicitly: without a RID the build pulls Microsoft.NETCore.App.Runtime.Mono.win-x64
+      for the host, and no 10.x build of that pack exists on nuget.org (NU1102). Every phone that
+      can run this helper is arm64 anyway.
+    -->
+    <RuntimeIdentifier>android-arm64</RuntimeIdentifier>
 
     <AndroidManifest>AndroidManifest.xml</AndroidManifest>
   </PropertyGroup>

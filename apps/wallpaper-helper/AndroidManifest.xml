@@ -2,6 +2,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
   <!--
+    targetSdkVersion MUST stay below 28. Android 9+ blocks non-SDK interfaces for apps targeting
+    28 or higher, and setting the LOCK-screen wallpaper requires WallpaperManager's hidden
+    setStream(InputStream, Rect, boolean, int) overload — the public API can only set the home
+    screen. This helper is sideloaded, not distributed through Play, so the older target is free.
+
+    Declared here rather than only in the csproj: the .NET Android SDK takes targetSdkVersion from
+    the manifest when present, and otherwise defaults it to the compile SDK (which would be 36).
+  -->
+  <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="27" />
+
+  <!--
     SET_WALLPAPER is a normal permission, granted automatically at install time.
     This helper uses the official WallpaperManager API only: no root, no system modification,
     no bypass of any device security mechanism (spec §42).
@@ -13,7 +24,15 @@
   <application
       android:label="PSMW Wallpaper Helper"
       android:allowBackup="false"
-      android:supportsRtl="true">
+      android:supportsRtl="true"
+      android:debuggable="true">
+    <!--
+      debuggable is required so the bridge can read the helper's result file with `adb run-as`.
+      Since Android 11 the shell cannot read /sdcard/Android/data/<pkg>, so this is the only
+      reliable way to get a result back out of a fire-and-forget `am start`.
+      This APK is sideloaded by the bridge and never distributed, so the flag is acceptable here.
+      See README.
+    -->
 
     <!-- No launcher icon: the helper is only ever started by the bridge through `am start`. -->
     <activity

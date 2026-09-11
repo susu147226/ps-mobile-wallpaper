@@ -29,33 +29,58 @@ A minimal Android app that lets PhoneBridge set a phone wallpaper through the of
 ```
 adb shell am start \
   -n com.psmobilewallpaper.helper/.SetWallpaperActivity \
-  --es imagePath /sdcard/Download/xxx.png \
-  --es target lock|home|both \
-  --es resultPath /sdcard/Download/xxx.json
+  --es imagePath /sdcard/Download/PSMobileWallpaper/xxx.png \
+  --es target lock|home|both
 ```
 
-`am start` 无法返回值，所以结果以 JSON 写入 `resultPath`：
+`am start` 无法返回值，所以结果写入 **应用私有目录** 的 `files/psmw-result.json`，
+Bridge 用 `run-as` 读回：
 
 ```json
 { "success": true, "message": "Applied to: lock.", "errorCode": null, "applied": ["lock"] }
 ```
 
+## 实测中踩到的几个坑（都已解决，记下来免得重犯）
+
+1. **`setStream` 的隐藏重载返回 `int`，不是 `void`**。
+   反射 dump 真机方法表后确认签名为
+   `setStream(InputStream, Rect, boolean, int) -> int`。JNI 描述符末尾必须是 `I`，
+   用 `CallIntMethod` 调用。写成 `V` + `CallVoidMethod` 会得到
+   `no non-static method ...`。
+
+2. **`targetSdkVersion` 必须写在 `AndroidManifest.xml` 里**。
+   只写 csproj 的 `<TargetSdkVersion>` 不生效，会被默认成编译用的 SDK（36）。
+   而 Android 9+ 的隐藏 API 拦截正是按 targetSdk 判定的，≥28 会直接封掉上面那个方法。
+
+3. **`/sdcard/Android/data/<pkg>/` 连应用自己都不能用原始路径访问**（Android 11+）。
+   所以待设置的图片推到 `/sdcard/Download/PSMobileWallpaper/`，不要推到这个目录。
+
+4. **开启 AOT 会导致运行时崩溃**：`UnsatisfiedLinkError: No implementation found for
+   ... n_onCreate`。构建时必须加 `-p:RunAOTCompilation=false`。
+
+5. **必须 `android:debuggable="true"`**，否则 Bridge 无法用 `run-as` 读回结果。
+   该 APK 仅侧载分发、不进入 Play，见 AndroidManifest.xml 中的说明。
+
 ## 构建
 
 ```bash
-dotnet build -f net10.0-android -c Release
+# 首次需要 Android SDK + JDK（约 740 MB）
+dotnet build -t:InstallAndroidDependencies -f net10.0-android \
+  -p:AndroidSdkDirectory="C:\Android\Sdk" -p:JavaSdkDirectory="C:\Android\Jdk" \
+  -p:AcceptAndroidSDKLicenses=True
+
+dotnet build -f net10.0-android -c Release \
+  -p:AndroidSdkDirectory="C:\Android\Sdk" -p:JavaSdkDirectory="C:\Android\Jdk" \
+  -p:RunAOTCompilation=false -p:AndroidEnableProfiledAot=false
 ```
 
-需要 .NET Android workload 与 Android SDK：
-
-```bash
-dotnet workload install android
-```
+产物：`bin/Release/net10.0-android/android-arm64/com.psmobilewallpaper.helper-Signed.apk`
 
 ## 安装到设备
 
 ```bash
-adb install -r bin/Release/net10.0-android/com.psmobilewallpaper.helper-Signed.apk
+adb install --no-incremental -g -r <apk>
 ```
 
-首次安装后 `SET_WALLPAPER` 会自动授予（属 normal 权限，无需运行时申请）。
+`-g` 授予 `READ_EXTERNAL_STORAGE`（helper 需要读取推送过去的图片）。
+`--no-incremental` 规避部分机型上的原生库加载问题。

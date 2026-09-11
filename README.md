@@ -196,10 +196,50 @@ center-fit 必须留边、其余模式必须铺满、三种纵向锚定的取样
 注意：当源图**宽于**目标时，裁剪会保留全高、只裁左右，此时 `center-crop`、`top-crop`、
 `bottom-crop` 在数学上等价 —— 纵向锚定只有在源图相对更高时才有区别。
 
+**Phase 9 / 10（Android 壁纸设置）— 已在真机验证**
+
+用 Huawei JAD-AL80（Android 12 / EMUI）实测通过，锁屏、主屏、同时设置三种目标均实际生效
+（`dumpsys wallpaper` 确认 System / Lock 壁纸 id 都更新了）。
+
+实现方式：本仓库附带一个 helper APK（`apps/wallpaper-helper`），通过**官方 WallpaperManager
+API** 代为设置壁纸。
+
+为什么必须这样做 —— `adb shell` 本身做不到：
+
+- `cmd wallpaper` 在这些机型上返回 `No shell command implementation.`
+- `com.android.shell` 虽然持有 `SET_WALLPAPER` 权限，但没有任何命令行出口去使用它
+
+这不是破解：helper 只使用系统公开/隐藏但非特权的 API，不 root、不改系统镜像、不绕过安全检查
+（spec §42）。能力声明由**实测**决定：helper 未安装时只报相册保存，安装后才报锁屏/主屏支持。
+
 **尚未完成**
 
-- Phase 6：插件侧画布导出尚未进 Photoshop 实机验证（本机缺 UXP Developer Tool）
-- Phase 9 / 10：**真实的锁屏壁纸设置尚未按品牌验证**
+- Phase 6：插件已在 Photoshop 2025 中**确认加载成功**（见下），但面板功尚未逐项验证
+- **HarmonyOS 的锁屏设置未实现**：其 `WallpaperManagerService` 经 hidumper 不暴露任何接口，
+  目前仍返回 `WALLPAPER_NOT_SUPPORTED`
+
+## 在 Photoshop 中加载插件
+
+UXP 插件**不会**出现在「窗口 → 扩展（旧版）」—— 那是 CEP 的位置。UXP 面板在
+**「增效工具」(Plug-ins)** 菜单下。
+
+**重要**：Windows 安装包只安装 PhoneBridge，并把插件文件放在安装目录的 `plugin\` 下，
+**不会**向 Photoshop 注册插件。需要单独加载：
+
+```powershell
+# 无需 Adobe 账号：复制到 UXP 的旁加载目录，然后重启 Photoshop
+$dest = "$env:APPDATA\Adobe\UXP\Plugins\External\com.psmobilewallpaper.panel"
+New-Item -ItemType Directory -Force -Path $dest | Out-Null
+Copy-Item "$env:ProgramFiles\PS Mobile Wallpaper\plugin\*" $dest -Force
+```
+
+重启 Photoshop → 菜单栏 → **增效工具** → **PS Mobile Wallpaper**。
+
+也可以使用官方的 UXP Developer Tool（需 Creative Cloud 桌面版 + Adobe 账号）：
+`Add Plugin` → 选择 `plugin\manifest.json` → `Load`。
+
+面板首次使用需要在 Token 输入框填入 `%AppData%\PSMobileWallpaper\auth.token` 的内容
+（点「从文件读取」会直接打开该目录）。UXP 沙箱不允许插件自行读取 `%AppData%`。
 
 ## 验证方式
 
@@ -213,6 +253,7 @@ dotnet test tests/integration/PSMobileWallpaper.IntegrationTests/PSMobileWallpap
 # 端到端（需先启动 Bridge）
 python scripts/phase5-e2e-check.py    # 设备识别 + WS 事件 + 裁剪
 python scripts/crop-modes-check.py    # §11 全部裁剪模式的像素级验证
+python scripts/wallpaper-check.py lock|home|both   # §17 壁纸设置（走 helper APK）
 ```
 
 ## 重要说明

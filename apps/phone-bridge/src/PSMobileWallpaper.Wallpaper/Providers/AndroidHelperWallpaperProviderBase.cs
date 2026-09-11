@@ -23,11 +23,25 @@ public abstract class AndroidHelperWallpaperProviderBase : WallpaperProviderBase
     internal const string HelperPackage = "com.psmobilewallpaper.helper";
     internal const string HelperActivity = "com.psmobilewallpaper.helper.SetWallpaperActivity";
 
+    /// <summary>
+    /// Where the image is pushed before the helper is invoked.
+    ///
+    /// Deliberately NOT /sdcard/Android/data/&lt;pkg&gt;: since Android 11 that tree is unreachable
+    /// through a raw path even for the app that owns it, so File.Exists() inside the helper returns
+    /// false. Shared storage works, and the helper is installed with `-g` so READ_EXTERNAL_STORAGE
+    /// is already granted.
+    /// </summary>
     private const string RemoteImageDirectory = "/sdcard/Download/PSMobileWallpaper";
 
-    /// <summary>Written by the helper, read back by us: `am start` cannot return a value.</summary>
-    private const string RemoteResultPath =
-        "/sdcard/Android/data/com.psmobilewallpaper.helper/files/psmw-result.json";
+    /// <summary>
+    /// Written by the helper into its private files directory: `am start` cannot return a value.
+    /// Read back with `run-as`, because since Android 11 the shell cannot see /sdcard/Android/data.
+    ///
+    /// `|| true` is load-bearing: while the helper is still starting, the file does not exist yet and
+    /// `cat` exits non-zero, which the transport would otherwise surface as a hard failure.
+    /// </summary>
+    private const string ResultCommand =
+        $"run-as {HelperPackage} cat files/psmw-result.json 2>/dev/null || true";
 
     private static readonly TimeSpan ResultTimeout = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan ResultPollInterval = TimeSpan.FromMilliseconds(500);
@@ -126,13 +140,14 @@ public abstract class AndroidHelperWallpaperProviderBase : WallpaperProviderBase
             await transport.PushAsync(device.Id, imagePath, remoteImage, cancellationToken).ConfigureAwait(false);
 
             // Clear any previous result so a stale file cannot be mistaken for this run's outcome.
-            await transport.ShellAsync(device.Id, $"rm -f {RemoteResultPath}", cancellationToken).ConfigureAwait(false);
+            await transport
+                .ShellAsync(device.Id, $"run-as {HelperPackage} rm -f files/psmw-result.json", cancellationToken)
+                .ConfigureAwait(false);
 
             var command =
                 $"am start -n {HelperPackage}/{HelperActivity}" +
                 $" --es imagePath {remoteImage}" +
-                $" --es target {target}" +
-                $" --es resultPath {RemoteResultPath}";
+                $" --es target {target}";
 
             var startOutput = await transport.ShellAsync(device.Id, command, cancellationToken).ConfigureAwait(false);
             Logger.LogDebug("Helper start output for {DeviceId}: {Output}", device.Id, startOutput.Trim());
@@ -219,18 +234,26 @@ public abstract class AndroidHelperWallpaperProviderBase : WallpaperProviderBase
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var json = await transport
-                .ShellAsync(device.Id, $"cat {RemoteResultPath} 2>/dev/null", cancellationToken)
-                .ConfigureAwait(false);
-
-            var parsed = TryParse(json);
-            if (parsed is not null)
+            try
             {
-                await transport
-                    .ShellAsync(device.Id, $"rm -f {RemoteResultPath}", cancellationToken)
+                var json = await transport
+                    .ShellAsync(device.Id, ResultCommand, cancellationToken)
                     .ConfigureAwait(false);
 
-                return parsed;
+                var parsed = TryParse(json);
+                if (parsed is not null)
+                {
+                    await transport
+                        .ShellAsync(device.Id, $"run-as {HelperPackage} rm -f files/psmw-result.json", cancellationToken)
+                        .ConfigureAwait(false);
+
+                    return parsed;
+                }
+            }
+            catch (TransportException ex)
+            {
+                // The device may still be bringing the helper up; keep polling until the deadline.
+                Logger.LogDebug(ex, "Result poll for {DeviceId} failed; retrying.", device.Id);
             }
 
             await Task.Delay(ResultPollInterval, cancellationToken).ConfigureAwait(false);
