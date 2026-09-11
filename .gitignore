@@ -42,6 +42,8 @@ auth.token
 # ---------- Installer output ----------
 installer/wix/bin/
 installer/wix/obj/
+installer/wix/staging/
+artifacts/
 *.msi
 *.wixpdb
 

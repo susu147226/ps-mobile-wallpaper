@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Installer for the PS Mobile Wallpaper PhoneBridge.
+
+  Installs a self-contained executable, so the target machine needs neither the .NET runtime nor an
+  Adobe account. Layout is staged by scripts/build-installer.ps1 into installer/wix/staging/.
+
+  Deliberately does NOT register a Windows service: the bridge keeps its config and auth token under
+  the *user's* %AppData%\PSMobileWallpaper (spec §2.7 / §23), which a LocalSystem service cannot see.
+  Auto-start is left to the user via a Startup-folder shortcut (see README).
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Package
+      Name="PS Mobile Wallpaper PhoneBridge"
+      Manufacturer="PS Mobile Wallpaper"
+      Version="$(var.ProductVersion)"
+      UpgradeCode="83C0D938-4B17-4735-863A-1FBB1D361B8A"
+      Scope="perMachine"
+      Compressed="yes">
+
+    <SummaryInformation
+        Description="Local bridge connecting the PS Mobile Wallpaper Photoshop panel to an Android or HarmonyOS phone over USB."
+        Manufacturer="PS Mobile Wallpaper" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of PS Mobile Wallpaper PhoneBridge is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Launch
+        Condition="VersionNT64"
+        Message="PS Mobile Wallpaper PhoneBridge requires 64-bit Windows." />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="PS Mobile Wallpaper">
+        <Directory Id="PluginFolder" Name="plugin" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="PS Mobile Wallpaper" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="DesktopFolder" />
+
+    <Feature Id="Main" Title="PhoneBridge" Level="1">
+      <ComponentGroupRef Id="BridgeComponents" />
+      <ComponentGroupRef Id="PluginComponents" />
+      <ComponentGroupRef Id="ShortcutComponents" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="BridgeComponents" Directory="INSTALLFOLDER">
+      <Component Id="BridgeExecutable" Guid="E9F01764-2019-480A-8F07-DF27EF173F7C">
+        <File Id="BridgeExe"
+              Source="staging\app\PSMobileWallpaper.Api.exe"
+              KeyPath="yes" />
+      </Component>
+
+      <Component Id="BridgeAppSettings" Guid="A1E29AEC-70F4-418B-8587-7A157D8DC706">
+        <File Id="AppSettingsJson"
+              Source="staging\app\appsettings.json"
+              KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <!-- The UXP panel ships alongside the bridge so it can be sideloaded without an Adobe account. -->
+    <ComponentGroup Id="PluginComponents" Directory="PluginFolder">
+      <Component Id="PluginBundle" Guid="87C98EE4-F07D-4C51-8FE1-6AF5B0B36AE7">
+        <File Id="PluginManifest"
+              Source="staging\plugin\manifest.json"
+              KeyPath="yes" />
+        <File Id="PluginMain" Source="staging\plugin\main.js" />
+        <File Id="PluginHtml" Source="staging\plugin\index.html" />
+        <File Id="PluginStyles" Source="staging\plugin\styles.css" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="ShortcutComponents">
+      <Component Id="StartMenuShortcut" Guid="E9C889D6-CC87-4972-A2BD-C1C2C5B2A87A"
+                 Directory="ApplicationProgramsFolder">
+        <Shortcut Id="StartMenuBridge"
+                  Name="PS Mobile Wallpaper PhoneBridge"
+                  Description="Start the local bridge that connects the Photoshop panel to your phone."
+                  Target="[INSTALLFOLDER]PSMobileWallpaper.Api.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="RemoveApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\PSMobileWallpaper" Name="StartMenuShortcut"
+                       Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+
+      <Component Id="DesktopShortcut" Guid="C3C15677-A764-4A1D-834D-3F3B52726231"
+                 Directory="DesktopFolder">
+        <Shortcut Id="DesktopBridge"
+                  Name="PS Mobile Wallpaper PhoneBridge"
+                  Description="Start the local bridge that connects the Photoshop panel to your phone."
+                  Target="[INSTALLFOLDER]PSMobileWallpaper.Api.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKCU" Key="Software\PSMobileWallpaper" Name="DesktopShortcut"
+                       Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+
+</Wix>
